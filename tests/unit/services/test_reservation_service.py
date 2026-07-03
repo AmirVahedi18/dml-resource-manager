@@ -147,3 +147,30 @@ def test_min_free_ram_in_range(setup):
     rs.create_reservation(session, user, gpu, START, END, 8000, regulation, now=NOW)
     free = rs.min_free_ram_in_range(session, gpu, START, END)
     assert free == gpu.total_ram_mb - 8000
+
+
+def test_slot_availability_reflects_partial_overlap(setup):
+    session, gpu, regulation, user = setup
+    # occupy only the first half-hour of a 1-hour window
+    rs.create_reservation(session, user, gpu, START, START + timedelta(minutes=30), 8000, regulation, now=NOW)
+
+    slots = rs.slot_availability(session, gpu, START, START + timedelta(hours=1), slot_minutes=30)
+
+    naive_start = START.replace(tzinfo=None)
+    assert len(slots) == 2
+    assert slots[0] == (naive_start, gpu.total_ram_mb - 8000)
+    assert slots[1] == (naive_start + timedelta(minutes=30), gpu.total_ram_mb)
+
+
+def test_slot_availability_min_matches_min_free_ram_in_range(setup):
+    session, gpu, regulation, user = setup
+    other = make_user(session, telegram_id=2)
+    rs.create_reservation(session, user, gpu, START, START + timedelta(minutes=30), 5000, regulation, now=NOW)
+    rs.create_reservation(
+        session, other, gpu, START + timedelta(minutes=30), START + timedelta(hours=1), 9000, regulation, now=NOW
+    )
+
+    slots = rs.slot_availability(session, gpu, START, START + timedelta(hours=1), slot_minutes=30)
+    min_from_slots = min(free for _, free in slots)
+
+    assert min_from_slots == rs.min_free_ram_in_range(session, gpu, START, START + timedelta(hours=1))

@@ -1,0 +1,6 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>Usage report</strong></p>
+  <img src="/api/admin/usage/{{ scope }}/{{ range_key }}/chart.png?init_data={{ init_data | urlencode }}"
+       alt="usage chart" style="width:100%">
+</div>

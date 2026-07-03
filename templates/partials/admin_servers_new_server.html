@@ -1,0 +1,9 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  {% if error %}<p>❌ {{ error }}</p>{% endif %}
+  <form hx-post="/api/admin/servers/new" hx-target="#content">
+    <label for="name">Server name</label>
+    <input type="text" name="name" id="name" required>
+    <button type="submit">➕ Create</button>
+  </form>
+</div>

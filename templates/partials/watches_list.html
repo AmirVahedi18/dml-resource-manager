@@ -1,0 +1,20 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>My Watches</strong></p>
+  {% if not watches %}
+  <p class="muted">You have no active watches.</p>
+  {% endif %}
+  {% for w in watches %}
+  <div class="card">
+    <p>
+      {{ w.gpu.server.name }} GPU{{ w.gpu.index_on_server }}<br>
+      {{ w.range_start_label }} → {{ w.range_end_label }}<br>
+      min {{ w.min_ram_needed_mb }} MB
+    </p>
+    <form hx-post="/api/watches/{{ w.id }}/cancel" hx-target="#content">
+      <button type="submit">❌ Cancel watch</button>
+    </form>
+  </div>
+  {% endfor %}
+  <a class="btn" hx-get="/api/watches/new" hx-target="#content">➕ New Watch</a>
+</div>

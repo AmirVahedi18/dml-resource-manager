@@ -1,0 +1,9 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>{{ server.name }} GPU{{ gpu.index_on_server }}</strong></p>
+  <script type="application/json" id="schedule-slots">{{ slots_json | safe }}</script>
+  <div class="grid-picker-container"
+       data-slot-data-id="schedule-slots"
+       data-readonly="true"
+       data-total-ram-mb="{{ gpu.total_ram_mb }}"></div>
+</div>

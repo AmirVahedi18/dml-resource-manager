@@ -44,12 +44,20 @@ class SchedulerConfig:
 
 
 @dataclass
+class WebappConfig:
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+
+@dataclass
 class AppConfig:
+    interface: str = "webapp"  # "webapp" (Mini App only) or "legacy" (classic chat menu only)
     bot: BotConfig = field(default_factory=BotConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     regulation: RegulationConfig = field(default_factory=RegulationConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    webapp: WebappConfig = field(default_factory=WebappConfig)
 
 
 def register_configs() -> None:

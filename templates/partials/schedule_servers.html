@@ -1,0 +1,7 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>View Schedule — choose a server</strong></p>
+  {% for server in servers %}
+  <a class="btn" hx-get="/api/schedule/{{ server.id }}" hx-target="#content">{{ server.name }}</a>
+  {% endfor %}
+</div>

@@ -1,0 +1,12 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>All Reservations (lab-wide)</strong></p>
+  {% if not reservations %}
+  <p class="muted">No upcoming reservations.</p>
+  {% endif %}
+  {% for r in reservations %}
+  <a class="btn" hx-get="/api/admin/reservations/{{ r.id }}" hx-target="#content">
+    {{ r.gpu.server.name }} GPU{{ r.gpu.index_on_server }} · {{ r.user.full_name }} · {{ r.start_label }}
+  </a>
+  {% endfor %}
+</div>

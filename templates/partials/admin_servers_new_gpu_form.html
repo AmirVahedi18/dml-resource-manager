@@ -1,0 +1,14 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>Add GPU to {{ server.name }}</strong></p>
+  {% if error %}<p>❌ {{ error }}</p>{% endif %}
+  <form hx-post="/api/admin/servers/new-gpu/{{ server.id }}" hx-target="#content">
+    <label for="index_on_server">Index on server</label>
+    <input type="number" name="index_on_server" id="index_on_server" min="0" required>
+    <label for="model_name">Model name</label>
+    <input type="text" name="model_name" id="model_name" required>
+    <label for="total_ram_mb">Total RAM (MB)</label>
+    <input type="number" name="total_ram_mb" id="total_ram_mb" min="1" required>
+    <button type="submit">➕ Add</button>
+  </form>
+</div>

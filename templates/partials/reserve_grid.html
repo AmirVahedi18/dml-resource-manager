@@ -1,0 +1,16 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>{{ server.name }} GPU{{ gpu.index_on_server }}</strong></p>
+  <p class="muted">Drag across free cells to pick a time range, then set the RAM you need.</p>
+  <script type="application/json" id="reserve-slots">{{ slots_json | safe }}</script>
+  <div class="grid-picker-container" data-slot-data-id="reserve-slots" data-total-ram-mb="{{ gpu.total_ram_mb }}"></div>
+
+  <form hx-post="/api/reserve/{{ server.id }}/{{ gpu.id }}" hx-target="#content">
+    <p class="selection-caption muted">Select a time range above.</p>
+    <input type="hidden" name="start">
+    <input type="hidden" name="end">
+    <label for="ram_mb">RAM (MB)</label>
+    <input type="number" name="ram_mb" id="ram_mb" min="1" value="1" required>
+    <button type="submit" disabled>✅ Reserve</button>
+  </form>
+</div>

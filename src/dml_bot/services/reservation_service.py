@@ -61,8 +61,12 @@ def _peak_concurrent_ram(
     """Max RAM (mb) held simultaneously by `reservations`, clipped to [window_start, window_end)."""
     events: list[tuple[datetime, int]] = []
     for r in reservations:
-        events.append((max(r.start_time, window_start), r.ram_mb))
-        events.append((min(r.end_time, window_end), -r.ram_mb))
+        clipped_start = max(r.start_time, window_start)
+        clipped_end = min(r.end_time, window_end)
+        if clipped_start >= clipped_end:
+            continue  # touches the window boundary but doesn't actually overlap it
+        events.append((clipped_start, r.ram_mb))
+        events.append((clipped_end, -r.ram_mb))
     events.sort(key=lambda e: e[0])
 
     current = 0
@@ -78,6 +82,29 @@ def min_free_ram_in_range(session: Session, gpu: GPU, start_time: datetime, end_
     overlapping = get_overlapping_active_reservations(session, gpu.id, start_time, end_time)
     peak = _peak_concurrent_ram(overlapping, start_time, end_time)
     return gpu.total_ram_mb - peak
+
+
+def slot_availability(
+    session: Session, gpu: GPU, range_start: datetime, range_end: datetime, slot_minutes: int
+) -> list[tuple[datetime, int]]:
+    """Free RAM (mb) for each slot_minutes-sized slot in [range_start, range_end).
+
+    The max of per-slot peaks equals the true peak over the whole range (the instant of peak
+    concurrency falls inside exactly one slot), so `min(free for slot in slots)` is exactly the
+    largest ram_mb a single reservation spanning the whole range could request -- this is what
+    the grid picker uses to cap the RAM a student can select for a dragged range.
+    """
+    range_start, range_end = to_naive_utc(range_start), to_naive_utc(range_end)
+    overlapping = get_overlapping_active_reservations(session, gpu.id, range_start, range_end)
+
+    slots = []
+    slot_start = range_start
+    while slot_start < range_end:
+        slot_end = slot_start + timedelta(minutes=slot_minutes)
+        peak = _peak_concurrent_ram(overlapping, slot_start, slot_end)
+        slots.append((slot_start, gpu.total_ram_mb - peak))
+        slot_start = slot_end
+    return slots
 
 
 def count_active_reservations(session: Session, user_id: int, now: datetime | None = None) -> int:

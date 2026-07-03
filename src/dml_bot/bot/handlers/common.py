@@ -3,13 +3,22 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from dml_bot.bot.auth import get_active_user, is_admin
 from dml_bot.bot.keyboards import admin_menu_keyboard, main_menu_keyboard
+from dml_bot.config.schema import AppConfig
 from dml_bot.db.session import session_scope
 
-HELP_TEXT = (
+HELP_TEXT_LEGACY = (
     "<b>DML Resource Manager</b>\n\n"
     "Use the buttons below to reserve a GPU, check the schedule, or manage your "
     "reservations and watches. You must follow the time slots you reserve — this is "
     "lab policy.\n\n"
+    "Not registered yet? Send /myid and give that number to the lab admin."
+)
+
+HELP_TEXT_WEBAPP = (
+    "<b>DML Resource Manager</b>\n\n"
+    "Tap the <b>Open App</b> button next to the message box to reserve a GPU, check the "
+    "schedule, or manage your reservations and watches. You must follow the time slots you "
+    "reserve — this is lab policy.\n\n"
     "Not registered yet? Send /myid and give that number to the lab admin."
 )
 
@@ -30,6 +39,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "Send /myid and give that number to the lab admin to get registered."
             )
             return
+
+    config: AppConfig = context.bot_data["config"]
+    if config.interface == "webapp":
+        await update.effective_message.reply_text(
+            "Welcome to the DML Resource Manager.\n\n"
+            "Tap the <b>Open App</b> button next to the message box to get started.",
+            parse_mode="HTML",
+        )
+        return
     await show_main_menu(update, context, "Welcome to the DML Resource Manager.")
 
 
@@ -41,11 +59,13 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AppConfig = context.bot_data["config"]
+    text = HELP_TEXT_WEBAPP if config.interface == "webapp" else HELP_TEXT_LEGACY
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(HELP_TEXT, parse_mode="HTML")
+        await update.callback_query.edit_message_text(text, parse_mode="HTML")
     else:
-        await update.effective_message.reply_text(HELP_TEXT, parse_mode="HTML")
+        await update.effective_message.reply_text(text, parse_mode="HTML")
 
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

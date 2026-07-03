@@ -1,8 +1,14 @@
 import pytest
+from fastapi.testclient import TestClient
 
+from dml_bot.api.app import build_api_app
 from dml_bot.config.schema import AppConfig
 from dml_bot.db.session import dispose_engine, init_engine, session_scope
 from dml_bot.services import regulation_service, server_service, user_service
+from tests.webapp_signing import sign_init_data
+
+BOT_TOKEN = "123456:test-bot-token"
+ADMIN_TELEGRAM_ID = 999
 
 
 @pytest.fixture()
@@ -17,3 +23,15 @@ def lab_setup():
         ids = {"server_id": server.id, "gpu_id": gpu.id, "telegram_id": user.telegram_id}
     yield ids
     dispose_engine()
+
+
+@pytest.fixture()
+def api_client(lab_setup):
+    """FastAPI TestClient wired up with the same DB as `lab_setup` and a fixed admin ID."""
+    app = build_api_app(AppConfig(), BOT_TOKEN, {ADMIN_TELEGRAM_ID})
+    return TestClient(app)
+
+
+def auth_headers(telegram_id: int, **user_fields) -> dict:
+    user = {"id": telegram_id, "first_name": "Test", **user_fields}
+    return {"X-Telegram-Init-Data": sign_init_data(BOT_TOKEN, user)}

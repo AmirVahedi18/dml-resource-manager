@@ -55,6 +55,26 @@ rough sequencing guide, not a commitment.
   dependencies). Plotly would give nicer styling at the cost of a heavier dependency (kaleido
   bundles a Chromium-like binary for PNG export).
 
+## v2.x — Mini App refinements
+
+- **Real domain + TLS instead of a tunnel.** The Mini App currently defaults to a Cloudflare
+  Tunnel/ngrok URL for `WEBAPP_PUBLIC_URL` since the lab didn't have a domain+TLS setup decided
+  yet. Migrating to a real domain with a Let's Encrypt cert is a pure config change (just update
+  the env var) — no code changes needed, but worth tracking as the "real" production step.
+- **Inline "Open Mini App" button in the classic menu.** v1 only exposes the Mini App via the
+  persistent Menu Button (next to the message input). Adding a second entry point as a button in
+  the classic `/start` menu would help first-time discoverability, at the cost of one more button
+  in an already-simple menu.
+- **Own-session/JWT auth instead of stateless initData re-validation.** v1 re-validates Telegram's
+  `initData` on every single API request (no server-side session). A conventional "log in once,
+  get a cookie" model would feel more like a typical web app, but adds session storage/expiry
+  logic for a benefit that doesn't clearly apply here — the Mini App is always relaunched fresh
+  from Telegram anyway.
+- **Browser-level tests (e.g. Playwright).** v1 tests the Mini App at the API level only
+  (FastAPI's `TestClient`, simulated signed `initData`) plus manual verification in real Telegram.
+  Playwright would catch real frontend bugs (the grid-picker's drag interaction, htmx swaps,
+  rendering) that API tests structurally can't see, at the cost of much heavier/slower tooling.
+
 ## v3.x — i18n & deployment
 
 - **Multi-language UI.** v1 ships English-only. Farsi (or full per-user language selection) would
@@ -79,3 +99,10 @@ them would mean rewriting rather than extending v1, so they're not sequenced int
 - **Persistent reply keyboard or slash-commands+free-text** instead of inline-keyboard wizards for
   the bot's primary interaction style.
 - **External cron + standalone CLI script** instead of in-process APScheduler for background jobs.
+- **Flask or aiohttp** instead of FastAPI for the Mini App's backend.
+- **Separate process for the Mini App's web server** instead of running it alongside the bot's
+  polling loop on one shared event loop.
+- **A small SPA framework (Preact/Svelte) with a build step** instead of server-rendered Jinja2
+  templates + htmx for the Mini App's frontend.
+- **Mirroring the classic bot's step-by-step wizard as web forms** instead of the richer
+  click-and-drag visual time grid the Mini App actually ships with.

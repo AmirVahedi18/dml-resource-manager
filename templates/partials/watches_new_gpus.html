@@ -1,0 +1,9 @@
+{% include "partials/_home_button.html" %}
+<div class="card">
+  <p><strong>{{ server.name }} — choose a GPU</strong></p>
+  {% for gpu in gpus %}
+  <a class="btn" hx-get="/api/watches/new/{{ server.id }}/{{ gpu.id }}" hx-target="#content">
+    GPU {{ gpu.index_on_server }} · {{ gpu.model_name }} · {{ gpu.total_ram_mb }}MB
+  </a>
+  {% endfor %}
+</div>
