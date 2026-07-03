@@ -1,0 +1,17 @@
+defaults:
+  - base_config
+  - bot: default
+  - database: default
+  - logging: default
+  - regulation: default
+  - scheduler: default
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  output_subdir: null
+  run:
+    dir: .

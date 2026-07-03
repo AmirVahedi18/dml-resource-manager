@@ -1,0 +1,4 @@
+# Telegram-facing display settings (secrets like the bot token live in .env, not here)
+parse_mode: HTML
+timezone: UTC
+date_picker_days_visible: 14
