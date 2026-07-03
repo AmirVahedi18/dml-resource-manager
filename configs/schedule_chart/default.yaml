@@ -1,0 +1,10 @@
+# Reply-keyboard interface: per-slot RAM occupancy chart shown by "View Schedule".
+# bucket_hours: width of each time bucket in the chart (e.g. 1, 2, 4, 6, 12, 24).
+# max_width_chars: max monospace line width the chart is laid out to fit, so it
+# doesn't wrap on a phone screen (30 fits comfortably on typical phones in Telegram's <pre> font).
+bucket_hours: 1.0
+max_width_chars: 40
+
+# Date-range choices offered by "View Schedule", in days (besides the always-present "Today").
+# Any option longer than the regulation's booking horizon is hidden from the menu.
+range_days_options: [3, 5, 7, 10, 14]

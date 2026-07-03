@@ -1,8 +1,10 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from dml_bot.db.models.gpu import GPU
+from dml_bot.db.models.reservation import Reservation
 from dml_bot.db.models.server import Server
+from dml_bot.db.models.watch import WatchSubscription
 
 
 class ServerAlreadyExistsError(Exception):
@@ -60,3 +62,54 @@ def list_gpus(session: Session, server: Server, active_only: bool = True) -> lis
 
 def get_gpu(session: Session, gpu_id: int) -> GPU | None:
     return session.get(GPU, gpu_id)
+
+
+def rename_server(session: Session, server: Server, name: str) -> Server:
+    existing = session.execute(select(Server).where(Server.name == name, Server.id != server.id)).scalar_one_or_none()
+    if existing is not None:
+        raise ServerAlreadyExistsError(f"server '{name}' already exists")
+    server.name = name
+    session.flush()
+    return server
+
+
+def set_server_active(session: Session, server: Server, is_active: bool) -> Server:
+    server.is_active = is_active
+    session.flush()
+    return server
+
+
+def _delete_gpu_dependents(session: Session, gpu_id: int) -> None:
+    session.execute(delete(WatchSubscription).where(WatchSubscription.gpu_id == gpu_id))
+    session.execute(delete(Reservation).where(Reservation.gpu_id == gpu_id))
+
+
+def delete_server(session: Session, server: Server) -> None:
+    """Permanently deletes the server, its GPUs, and all their reservations/watches. There's no
+    FK cascade configured at the DB level (SQLite FK enforcement isn't enabled in this project),
+    so dependent rows are deleted explicitly to avoid leaving orphaned rows behind."""
+    gpus = list_gpus(session, server, active_only=False)
+    for gpu in gpus:
+        _delete_gpu_dependents(session, gpu.id)
+        session.delete(gpu)
+    session.delete(server)
+    session.flush()
+
+
+def rename_gpu(session: Session, gpu: GPU, model_name: str) -> GPU:
+    gpu.model_name = model_name
+    session.flush()
+    return gpu
+
+
+def set_gpu_active(session: Session, gpu: GPU, is_active: bool) -> GPU:
+    gpu.is_active = is_active
+    session.flush()
+    return gpu
+
+
+def delete_gpu(session: Session, gpu: GPU) -> None:
+    """Permanently deletes the GPU and all its reservations/watches (see delete_server)."""
+    _delete_gpu_dependents(session, gpu.id)
+    session.delete(gpu)
+    session.flush()

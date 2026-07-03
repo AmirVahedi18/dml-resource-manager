@@ -6,11 +6,12 @@ defaults:
   - regulation: default
   - scheduler: default
   - webapp: default
+  - schedule_chart: default
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
   - _self_
 
-interface: legacy  # "webapp" (Mini App only) or "legacy" (classic chat menu only)
+interface: reply_keyboard  # "webapp", "legacy" (classic inline menu), or "reply_keyboard"
 
 hydra:
   job:

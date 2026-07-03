@@ -50,14 +50,24 @@ class WebappConfig:
 
 
 @dataclass
+class ScheduleChartConfig:
+    bucket_hours: float = 2.0
+    max_width_chars: int = 30
+    # "View Schedule" date-range choices, in days (besides the always-present "Today"); any
+    # option exceeding the regulation's booking horizon is hidden.
+    range_days_options: list[int] = field(default_factory=lambda: [3, 5, 7, 10, 14])
+
+
+@dataclass
 class AppConfig:
-    interface: str = "webapp"  # "webapp" (Mini App only) or "legacy" (classic chat menu only)
+    interface: str = "webapp"  # "webapp", "legacy" (classic inline menu), or "reply_keyboard"
     bot: BotConfig = field(default_factory=BotConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     regulation: RegulationConfig = field(default_factory=RegulationConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     webapp: WebappConfig = field(default_factory=WebappConfig)
+    schedule_chart: ScheduleChartConfig = field(default_factory=ScheduleChartConfig)
 
 
 def register_configs() -> None:

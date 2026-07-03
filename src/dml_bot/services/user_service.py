@@ -1,7 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from dml_bot.db.models.reservation import Reservation
 from dml_bot.db.models.user import User
+from dml_bot.db.models.watch import WatchSubscription
 
 
 class UserAlreadyExistsError(Exception):
@@ -42,3 +44,19 @@ def set_privilege(session: Session, user: User, can_use_multiple_gpus: bool) -> 
     user.can_use_multiple_gpus = can_use_multiple_gpus
     session.flush()
     return user
+
+
+def rename_user(session: Session, user: User, full_name: str) -> User:
+    user.full_name = full_name
+    session.flush()
+    return user
+
+
+def delete_user(session: Session, user: User) -> None:
+    """Permanently deletes the user and all their reservations/watches. There's no FK cascade
+    configured at the DB level (SQLite FK enforcement isn't enabled in this project), so the
+    dependent rows are deleted explicitly here to avoid leaving orphaned rows behind."""
+    session.execute(delete(WatchSubscription).where(WatchSubscription.user_id == user.id))
+    session.execute(delete(Reservation).where(Reservation.user_id == user.id))
+    session.delete(user)
+    session.flush()

@@ -11,6 +11,7 @@ from telegram import MenuButtonDefault, MenuButtonWebApp, WebAppInfo
 
 from dml_bot.api.app import build_api_app
 from dml_bot.bot.app import build_application
+from dml_bot.bot_reply.app import build_reply_application
 from dml_bot.config.schema import AppConfig, register_configs
 from dml_bot.db.session import init_engine, session_scope
 from dml_bot.logging_setup import setup_logging
@@ -57,7 +58,7 @@ async def _run(application, api_app, app_cfg: AppConfig, webapp_public_url: str)
             )
             await server.serve()
         else:
-            logger.info("Running in 'legacy' interface mode -- Mini App web server not started")
+            logger.info("Running in %r interface mode -- Mini App web server not started", app_cfg.interface)
             await _wait_for_stop_signal()
     finally:
         scheduler.shutdown(wait=False)
@@ -71,9 +72,14 @@ def main(cfg: DictConfig) -> None:
     load_dotenv()
     app_cfg: AppConfig = OmegaConf.to_object(cfg)
 
-    if app_cfg.interface not in {"webapp", "legacy"}:
+    tz_override = os.environ.get("TZ", "").strip()
+    if tz_override:
+        app_cfg.bot.timezone = tz_override
+
+    if app_cfg.interface not in {"webapp", "legacy", "reply_keyboard"}:
         raise ValueError(
-            f"configs/config.yaml: interface must be 'webapp' or 'legacy', got {app_cfg.interface!r}"
+            "configs/config.yaml: interface must be 'webapp', 'legacy', or 'reply_keyboard', "
+            f"got {app_cfg.interface!r}"
         )
 
     setup_logging(app_cfg.logging)
@@ -93,7 +99,10 @@ def main(cfg: DictConfig) -> None:
             "set in .env -- the Mini App needs a public HTTPS URL to register its menu button."
         )
 
-    application = build_application(token, admin_ids, app_cfg)
+    if app_cfg.interface == "reply_keyboard":
+        application = build_reply_application(token, admin_ids, app_cfg)
+    else:
+        application = build_application(token, admin_ids, app_cfg)
     api_app = build_api_app(app_cfg, token, admin_ids) if app_cfg.interface == "webapp" else None
 
     logger.info("DML Resource Manager starting in %r interface mode", app_cfg.interface)
