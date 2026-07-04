@@ -76,6 +76,10 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
 
     update = make_text_update(6, telegram_id, "2048", bot)
     state = await watch_handlers.choose_ram(update, context)
+    assert state == WatchFlowStates.CHOOSE_AUTO_BOOK
+
+    update = make_callback_update(7, telegram_id, "watch:autobook:no", bot)
+    state = await watch_handlers.choose_auto_book(update, context)
     assert state == ConversationHandler.END
 
     with session_scope() as session:
@@ -86,15 +90,15 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
     assert len(watches) == 1
     watch_id = watches[0].id
 
-    update = make_callback_update(7, telegram_id, "menu:watches", bot)
+    update = make_callback_update(8, telegram_id, "menu:watches", bot)
     state = await watch_handlers.start(update, context)
     assert state == WatchFlowStates.MENU
 
-    update = make_callback_update(8, telegram_id, f"watchlist:choose:{watch_id}", bot)
+    update = make_callback_update(9, telegram_id, f"watchlist:choose:{watch_id}", bot)
     state = await watch_handlers.choose_existing(update, context)
     assert state == WatchFlowStates.CONFIRM_CANCEL
 
-    update = make_callback_update(9, telegram_id, "watchlist:confirm", bot)
+    update = make_callback_update(10, telegram_id, "watchlist:confirm", bot)
     state = await watch_handlers.confirm_cancel(update, context)
     assert state == ConversationHandler.END
 

@@ -51,6 +51,53 @@ async def test_run_watch_check_notifies_and_marks_notified(db_session):
     bot.send_message.assert_awaited_once()
 
 
+async def test_run_watch_check_auto_books_when_enabled(db_session):
+    server, gpu, regulation, occupier = _setup(db_session)
+    start = floor_to_slot(utc_now(), 30) + timedelta(hours=8)
+    end = start + timedelta(hours=2)
+    reservation = reservation_service.create_reservation(
+        db_session, occupier, gpu, start, end, gpu.total_ram_mb, regulation
+    )
+
+    watcher = make_user(db_session, telegram_id=2, full_name="Watcher")
+    watch_service.create_watch(db_session, watcher, gpu, start, end, 1000, auto_book=True)
+
+    reservation_service.cancel_reservation(db_session, reservation)
+    bot = StubBot()
+    sent = await jobs.run_watch_check(db_session, bot, "UTC")
+
+    assert sent == 1
+    assert bot.send_message.call_args.kwargs["chat_id"] == watcher.telegram_id
+    assert "Auto-booked" in bot.send_message.call_args.kwargs["text"]
+    booked = reservation_service.list_active_reservations_for_user(db_session, watcher.id)
+    assert len(booked) == 1
+    assert booked[0].start_time == start
+
+
+async def test_run_watch_check_falls_back_to_notify_when_auto_book_fails(db_session):
+    server, gpu, regulation, occupier = _setup(db_session)
+    regulation.max_active_reservations_per_user = 1
+    start = floor_to_slot(utc_now(), 30) + timedelta(hours=8)
+    end = start + timedelta(hours=2)
+    reservation = reservation_service.create_reservation(
+        db_session, occupier, gpu, start, end, gpu.total_ram_mb, regulation
+    )
+
+    watcher = make_user(db_session, telegram_id=2, full_name="Watcher")
+    other_gpu = make_gpu(db_session, server, index_on_server=1)
+    reservation_service.create_reservation(db_session, watcher, other_gpu, start, end, 1000, regulation)
+    watch_service.create_watch(db_session, watcher, gpu, start, end, 1000, auto_book=True)
+
+    reservation_service.cancel_reservation(db_session, reservation)
+    bot = StubBot()
+    sent = await jobs.run_watch_check(db_session, bot, "UTC")
+
+    assert sent == 1
+    assert "Auto-booked" not in bot.send_message.call_args.kwargs["text"]
+    assert "Free GPU capacity" in bot.send_message.call_args.kwargs["text"]
+    assert reservation_service.count_active_reservations(db_session, watcher.id) == 1
+
+
 async def test_run_reminder_check_sends_once(db_session):
     server, gpu, regulation, occupier = _setup(db_session)
     start = floor_to_slot(utc_now(), 30)  # next aligned slot, at most 30 min away

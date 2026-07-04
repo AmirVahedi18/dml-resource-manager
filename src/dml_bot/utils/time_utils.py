@@ -27,6 +27,13 @@ def floor_to_slot(dt: datetime, slot_minutes: int) -> datetime:
     return dt if remainder == 0 else dt + timedelta(seconds=slot_minutes * 60 - remainder)
 
 
+def align_down_to_slot(dt: datetime, slot_minutes: int) -> datetime:
+    """Round `dt` (naive UTC) down to the previous slot boundary."""
+    seconds_since_epoch = (dt - _EPOCH).total_seconds()
+    remainder = int(seconds_since_epoch) % (slot_minutes * 60)
+    return dt - timedelta(seconds=remainder)
+
+
 def local_day_range_utc(local_date: date, tz_name: str) -> tuple[datetime, datetime]:
     start_local = datetime(local_date.year, local_date.month, local_date.day, tzinfo=ZoneInfo(tz_name))
     return to_naive_utc(start_local), to_naive_utc(start_local + timedelta(days=1))

@@ -32,6 +32,7 @@ from dml_bot.utils.time_utils import local_day_range_utc, utc_now
 MENU_BUTTON = "🔔 Watches"
 NEW_WATCH = "➕ New Watch"
 RANGE_PRESETS = [("Today", "today"), ("This week", "week"), ("Next 30 days", "month"), ("Full booking horizon", "horizon")]
+AUTO_BOOK_CHOICES = [("✅ Yes, auto-book", True), ("🔕 No, just notify", False)]
 
 
 def _watch_items(session, user_id: int, tz_name: str) -> list[tuple[str, int]]:
@@ -216,17 +217,48 @@ async def choose_ram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"Please send a whole number of {unit} from 1 to {max_units}."
         )
         return WatchFlowStates.CHOOSE_RAM
-    ram_mb = units * unit_mb
+    context.user_data["ram_mb"] = units * unit_mb
+    return await _render_auto_book_step(update, context)
+
+
+async def _render_auto_book_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    markup = action_keyboard(context, AUTO_BOOK_CHOICES)
+    await update.effective_message.reply_text(
+        "Auto-book the slot the instant it frees (from whenever it frees, capped by the lab's "
+        "max reservation duration), or just get notified so you can pick manually?",
+        reply_markup=markup,
+    )
+    return WatchFlowStates.CHOOSE_AUTO_BOOK
+
+
+async def choose_auto_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.effective_message.text
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        return await _render_ram_prompt(update, context)
+
+    auto_book = resolve_choice(context, text)
+    if auto_book is None:
+        await update.effective_message.reply_text("Please use one of the buttons below.")
+        return WatchFlowStates.CHOOSE_AUTO_BOOK
 
     with session_scope() as session:
         user = get_active_user(session, update.effective_user.id)
         gpu = session.get(GPU, context.user_data["gpu_id"])
         range_start = datetime.fromisoformat(context.user_data["range_start"])
         range_end = datetime.fromisoformat(context.user_data["range_end"])
-        watch_service.create_watch(session, user, gpu, range_start, range_end, ram_mb)
+        watch_service.create_watch(
+            session, user, gpu, range_start, range_end, context.user_data["ram_mb"], auto_book=auto_book
+        )
 
     context.user_data.clear()
-    await update.effective_message.reply_text("✅ Watch created — you'll be notified when enough RAM frees up.")
+    text_out = (
+        "✅ Watch created — the slot will be booked for you automatically the instant it frees."
+        if auto_book
+        else "✅ Watch created — you'll be notified when enough RAM frees up."
+    )
+    await update.effective_message.reply_text(text_out)
     await show_main_menu(update, context)
     return ConversationHandler.END
 
@@ -241,6 +273,7 @@ def watch_conversation() -> ConversationHandler:
             WatchFlowStates.CHOOSE_GPU: [MessageHandler(text_filter, choose_gpu)],
             WatchFlowStates.CHOOSE_RANGE: [MessageHandler(text_filter, choose_range)],
             WatchFlowStates.CHOOSE_RAM: [MessageHandler(text_filter, choose_ram)],
+            WatchFlowStates.CHOOSE_AUTO_BOOK: [MessageHandler(text_filter, choose_auto_book)],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_watch_conversation",

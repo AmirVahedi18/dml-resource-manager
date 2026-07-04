@@ -74,6 +74,10 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
 
     update = make_text_update(5, telegram_id, "2", bot)
     state = await watch_handlers.choose_ram(update, context)
+    assert state == WatchFlowStates.CHOOSE_AUTO_BOOK
+
+    update = make_text_update(6, telegram_id, "🔕 No, just notify", bot)
+    state = await watch_handlers.choose_auto_book(update, context)
     assert state == ConversationHandler.END
 
     with session_scope() as session:
@@ -81,17 +85,18 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
         watches = watch_service.list_watches_for_user(session, user.id)
     assert len(watches) == 1
     assert watches[0].min_ram_needed_mb == 2048
+    assert watches[0].auto_book is False
 
-    update = make_text_update(6, telegram_id, watch_handlers.MENU_BUTTON, bot)
+    update = make_text_update(7, telegram_id, watch_handlers.MENU_BUTTON, bot)
     state = await watch_handlers.start(update, context)
     assert state == WatchFlowStates.MENU
 
     watch_label = _first_choice_label(context)
-    update = make_text_update(7, telegram_id, watch_label, bot)
+    update = make_text_update(8, telegram_id, watch_label, bot)
     state = await watch_handlers.menu_choice(update, context)
     assert state == WatchFlowStates.CONFIRM_CANCEL
 
-    update = make_text_update(8, telegram_id, CONFIRM, bot)
+    update = make_text_update(9, telegram_id, CONFIRM, bot)
     state = await watch_handlers.confirm_cancel(update, context)
     assert state == ConversationHandler.END
 

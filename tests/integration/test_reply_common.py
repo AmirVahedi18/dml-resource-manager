@@ -34,7 +34,7 @@ async def test_start_with_valid_invite_code_registers_student(lab_setup):
         assert user.full_name == "Charlie"
 
 
-async def test_help_command_sends_only_student_help_to_non_admins():
+async def test_help_command_sends_only_student_help_to_non_admins(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
     update = make_text_update(1, STUDENT_TELEGRAM_ID, "/help", bot)
@@ -47,7 +47,7 @@ async def test_help_command_sends_only_student_help_to_non_admins():
     assert "Admin Panel" not in text
 
 
-async def test_help_command_sends_student_and_admin_help_to_admins():
+async def test_help_command_sends_student_and_admin_help_to_admins(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
     update = make_text_update(1, ADMIN_TELEGRAM_ID, "/help", bot)

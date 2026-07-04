@@ -23,7 +23,8 @@ NOT_REGISTERED_TEXT = (
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Main menu:") -> None:
     """Always sends a fresh message rather than editing, so it never clobbers a result message
     a handler just displayed (e.g. a reservation confirmation) by editing it out from under the user."""
-    admin = is_admin(update.effective_user.id, context)
+    with session_scope() as session:
+        admin = is_admin(session, update.effective_user.id, context)
     await update.effective_message.reply_text(text, reply_markup=main_menu_keyboard(admin))
 
 
@@ -31,7 +32,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     telegram_id = update.effective_user.id
     with session_scope() as session:
         user = get_active_user(session, telegram_id)
-        if user is None and not is_admin(telegram_id, context):
+        if user is None and not is_admin(session, telegram_id, context):
             code = context.args[0] if context.args else None
             if code is None:
                 await update.effective_message.reply_text(NOT_REGISTERED_TEXT)
@@ -82,7 +83,9 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    if not is_admin(update.effective_user.id, context):
+    with session_scope() as session:
+        allowed = is_admin(session, update.effective_user.id, context)
+    if not allowed:
         await update.callback_query.edit_message_text("⛔ Admins only.")
         return
     await update.callback_query.edit_message_text("Admin panel:", reply_markup=admin_menu_keyboard())

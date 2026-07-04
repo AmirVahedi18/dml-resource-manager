@@ -7,7 +7,7 @@ from telegram.ext import (
     filters,
 )
 
-from dml_bot.bot.auth import require_admin
+from dml_bot.bot.auth import is_bootstrap_admin, require_admin
 from dml_bot.bot.handlers.common import cancel_wizard_callback, show_main_menu
 from dml_bot.bot.keyboards import CANCEL_BUTTON, cancel_only_keyboard
 from dml_bot.bot.states import AdminUserStates
@@ -22,7 +22,11 @@ def _render_list(session) -> tuple[str, InlineKeyboardMarkup]:
     invites = invite_service.list_pending_invites(session)
     rows = []
     for u in users:
-        flags = ("✅" if u.is_active else "🚫") + (" ⭐" if u.can_use_multiple_gpus else "")
+        flags = (
+            ("✅" if u.is_active else "🚫")
+            + (" ⭐" if u.can_use_multiple_gpus else "")
+            + (" 🛡" if u.is_admin else "")
+        )
         rows.append([InlineKeyboardButton(f"{u.full_name} {flags}", callback_data=f"adminusers:select:{u.id}")])
     for inv in invites:
         rows.append(
@@ -33,7 +37,10 @@ def _render_list(session) -> tuple[str, InlineKeyboardMarkup]:
     rows.append([InlineKeyboardButton("➕ Add User", callback_data="adminusers:add")])
     rows.append([CANCEL_BUTTON])
     if users or invites:
-        text = "Registered users (✅ active, 🚫 inactive, ⭐ privileged); 📨 = pending invite, tap to revoke:"
+        text = (
+            "Registered users (✅ active, 🚫 inactive, ⭐ privileged, 🛡 admin); "
+            "📨 = pending invite, tap to revoke:"
+        )
     else:
         text = "No users registered yet."
     return text, InlineKeyboardMarkup(rows)
@@ -60,7 +67,8 @@ async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"<b>{user.full_name}</b>\n"
             f"Telegram ID: {user.telegram_id}\n"
             f"Status: {'active' if user.is_active else 'inactive'}\n"
-            f"Multi-GPU privilege: {'yes' if user.can_use_multiple_gpus else 'no'}"
+            f"Multi-GPU privilege: {'yes' if user.can_use_multiple_gpus else 'no'}\n"
+            f"Admin role: {'yes' if user.is_admin else 'no'}"
         )
     rows = [
         [InlineKeyboardButton(
@@ -71,8 +79,13 @@ async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "⭐ Revoke multi-GPU" if user.can_use_multiple_gpus else "⭐ Grant multi-GPU",
             callback_data=f"adminusers:togglepriv:{user_id}",
         )],
-        [CANCEL_BUTTON],
     ]
+    if is_bootstrap_admin(update.effective_user.id, context):
+        rows.append([InlineKeyboardButton(
+            "🛡 Revoke admin" if user.is_admin else "🛡 Grant admin",
+            callback_data=f"adminusers:toggleadmin:{user_id}",
+        )])
+    rows.append([CANCEL_BUTTON])
     await update.callback_query.edit_message_text(
         text, reply_markup=InlineKeyboardMarkup(rows), parse_mode="HTML"
     )
@@ -96,6 +109,20 @@ async def toggle_privilege(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with session_scope() as session:
         user = session.get(User, user_id)
         user_service.set_privilege(session, user, not user.can_use_multiple_gpus)
+        text, markup = _render_list(session)
+    await update.callback_query.edit_message_text(text, reply_markup=markup)
+    return AdminUserStates.MENU
+
+
+async def toggle_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_bootstrap_admin(update.effective_user.id, context):
+        await update.callback_query.answer("⛔ Only a bootstrap admin can do that.", show_alert=True)
+        return AdminUserStates.MENU
+    await update.callback_query.answer()
+    user_id = int(update.callback_query.data.split(":")[2])
+    with session_scope() as session:
+        user = session.get(User, user_id)
+        user_service.set_admin(session, user, not user.is_admin)
         text, markup = _render_list(session)
     await update.callback_query.edit_message_text(text, reply_markup=markup)
     return AdminUserStates.MENU
@@ -152,6 +179,7 @@ def users_conversation() -> ConversationHandler:
                 CallbackQueryHandler(select_user, pattern=r"^adminusers:select:\d+$"),
                 CallbackQueryHandler(toggle_active, pattern=r"^adminusers:toggleactive:\d+$"),
                 CallbackQueryHandler(toggle_privilege, pattern=r"^adminusers:togglepriv:\d+$"),
+                CallbackQueryHandler(toggle_admin, pattern=r"^adminusers:toggleadmin:\d+$"),
                 CallbackQueryHandler(revoke_invite, pattern=r"^adminusers:revokeinvite:\d+$"),
             ],
             AdminUserStates.ADD_FULL_NAME: [

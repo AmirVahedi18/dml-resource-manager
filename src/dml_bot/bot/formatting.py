@@ -36,5 +36,6 @@ def watch_summary(watch, gpu, server, tz_name: str = "UTC") -> str:
         f"<b>GPU:</b> {gpu.index_on_server} ({gpu.model_name})\n"
         f"<b>From:</b> {fmt_dt(watch.range_start, tz_name)}\n"
         f"<b>To:</b> {fmt_dt(watch.range_end, tz_name)}\n"
-        f"<b>Min RAM needed:</b> {fmt_ram(watch.min_ram_needed_mb)}"
+        f"<b>Min RAM needed:</b> {fmt_ram(watch.min_ram_needed_mb)}\n"
+        f"<b>Auto-book:</b> {'yes' if watch.auto_book else 'no'}"
     )

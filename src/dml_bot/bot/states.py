@@ -34,6 +34,7 @@ class WatchFlowStates(IntEnum):
     CHOOSE_GPU = auto()
     CHOOSE_RANGE = auto()
     CHOOSE_RAM = auto()
+    CHOOSE_AUTO_BOOK = auto()
 
 
 class AdminUserStates(IntEnum):

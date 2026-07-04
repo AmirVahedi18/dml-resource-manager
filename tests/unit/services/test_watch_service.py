@@ -57,3 +57,50 @@ def test_cancel_watch(db_session):
     watch = ws.create_watch(db_session, user, gpu, START, END, 1000)
     ws.cancel_watch(db_session, watch)
     assert ws.list_watches_for_user(db_session, user.id) == []
+
+
+def test_attempt_auto_book_books_the_freed_window(db_session):
+    gpu, regulation, user = _setup(db_session)
+    range_end = NOW + timedelta(hours=5)  # shorter than the 12h regulation cap
+    watch = ws.create_watch(db_session, user, gpu, NOW, range_end, 1000, auto_book=True)
+
+    reservation = ws.attempt_auto_book(db_session, watch, gpu, regulation, now=NOW)
+
+    assert reservation is not None
+    assert reservation.user_id == user.id
+    assert reservation.start_time == NOW.replace(tzinfo=None)
+    assert reservation.end_time == range_end.replace(tzinfo=None)
+    assert reservation.ram_mb == 1000
+
+
+def test_attempt_auto_book_caps_duration_to_regulation_max(db_session):
+    gpu, regulation, user = _setup(db_session)
+    range_end = NOW + timedelta(hours=20)  # longer than the 12h regulation cap
+    watch = ws.create_watch(db_session, user, gpu, NOW, range_end, 1000, auto_book=True)
+
+    reservation = ws.attempt_auto_book(db_session, watch, gpu, regulation, now=NOW)
+
+    assert reservation is not None
+    assert reservation.start_time == NOW.replace(tzinfo=None)
+    assert reservation.end_time == (NOW + timedelta(hours=regulation.max_duration_hours)).replace(tzinfo=None)
+
+
+def test_attempt_auto_book_returns_none_when_window_too_short(db_session):
+    gpu, regulation, user = _setup(db_session)
+    range_end = NOW + timedelta(minutes=10)  # less than one 30-minute slot
+    watch = ws.create_watch(db_session, user, gpu, NOW, range_end, 1000, auto_book=True)
+
+    assert ws.attempt_auto_book(db_session, watch, gpu, regulation, now=NOW) is None
+
+
+def test_attempt_auto_book_returns_none_when_reservation_limit_reached(db_session):
+    gpu, regulation, user = _setup(db_session)
+    regulation.max_active_reservations_per_user = 1
+    other_gpu = make_gpu(db_session, gpu.server, index_on_server=1)
+    rs.create_reservation(db_session, user, other_gpu, START, END, 1000, regulation, now=NOW)
+
+    range_end = NOW + timedelta(hours=5)
+    watch = ws.create_watch(db_session, user, gpu, NOW, range_end, 1000, auto_book=True)
+
+    assert ws.attempt_auto_book(db_session, watch, gpu, regulation, now=NOW) is None
+    assert rs.count_active_reservations(db_session, user.id, now=NOW) == 1

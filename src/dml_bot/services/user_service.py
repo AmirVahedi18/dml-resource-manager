@@ -47,6 +47,12 @@ def set_privilege(session: Session, user: User, can_use_multiple_gpus: bool) -> 
     return user
 
 
+def set_admin(session: Session, user: User, is_admin: bool) -> User:
+    user.is_admin = is_admin
+    session.flush()
+    return user
+
+
 def rename_user(session: Session, user: User, full_name: str) -> User:
     user.full_name = full_name
     session.flush()

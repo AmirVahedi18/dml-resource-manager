@@ -29,7 +29,7 @@ def accessible_server_ids_for(
 ) -> set[int] | None:
     """Admins implicitly have access to every server (returns None, meaning "unrestricted" to
     gpu_items); students are restricted to whichever servers the admin has explicitly granted."""
-    if is_admin(telegram_id, context):
+    if is_admin(session, telegram_id, context):
         return None
     return server_access_service.list_accessible_server_ids(session, user_id)
 

@@ -10,17 +10,26 @@ from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.reservation import Reservation, ReservationStatus
 from dml_bot.db.models.user import User
 from dml_bot.db.session import session_scope
-from dml_bot.services import server_service, watch_service
+from dml_bot.services import regulation_service, server_service, watch_service
 from dml_bot.utils.time_utils import utc_now
 
 
 async def run_watch_check(session: Session, bot, tz_name: str) -> int:
     sent = 0
+    regulation = regulation_service.get_regulation(session)
     for server in server_service.list_servers(session):
         for gpu in server_service.list_gpus(session, server):
             for watch in watch_service.find_matching_watches(session, gpu):
                 user = session.get(User, watch.user_id)
-                text = "🔔 Free GPU capacity available!\n\n" + watch_summary(watch, gpu, server, tz_name)
+                reservation = (
+                    watch_service.attempt_auto_book(session, watch, gpu, regulation) if watch.auto_book else None
+                )
+                if reservation is not None:
+                    text = "🎉 Auto-booked your freed-up reservation!\n\n" + reservation_summary(
+                        reservation, gpu, server, tz_name
+                    )
+                else:
+                    text = "🔔 Free GPU capacity available!\n\n" + watch_summary(watch, gpu, server, tz_name)
                 await bot.send_message(chat_id=user.telegram_id, text=text, parse_mode="HTML")
                 watch_service.mark_notified(session, watch)
                 sent += 1

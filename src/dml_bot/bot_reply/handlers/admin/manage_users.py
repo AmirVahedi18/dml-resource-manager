@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
-from dml_bot.bot.auth import require_admin
+from dml_bot.bot.auth import is_bootstrap_admin, require_admin
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
@@ -40,7 +40,11 @@ def _user_items(session) -> list[tuple[str, int | tuple]]:
     share this one paginated list since they're both "who's on the roster" from an admin's view."""
     items = []
     for u in user_service.list_users(session, active_only=False):
-        flags = ("✅" if u.is_active else "🚫") + (" ⭐" if u.can_use_multiple_gpus else "")
+        flags = (
+            ("✅" if u.is_active else "🚫")
+            + (" ⭐" if u.can_use_multiple_gpus else "")
+            + (" 🛡" if u.is_admin else "")
+        )
         items.append((f"{u.full_name} {flags}", u.id))
     for inv in invite_service.list_pending_invites(session):
         items.append((f"📨 {inv.full_name} ({inv.code}) 🗑", ("revokeinvite", inv.id)))
@@ -56,7 +60,8 @@ async def _render_list_step(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context, items, page, extra_rows=[[ADD_USER]], columns=grid.columns, rows=grid.rows
     )
     text = (
-        "Registered users (✅ active, 🚫 inactive, ⭐ privileged); 📨 = pending invite, tap to revoke:"
+        "Registered users (✅ active, 🚫 inactive, ⭐ privileged, 🛡 admin); "
+        "📨 = pending invite, tap to revoke:"
         if items
         else "No users registered yet."
     )
@@ -84,7 +89,8 @@ async def _show_user_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"<b>{user.full_name}</b>\n"
             f"Telegram ID: {user.telegram_id}\n"
             f"Status: {'active' if user.is_active else 'inactive'}\n"
-            f"Multi-GPU privilege: {'yes' if user.can_use_multiple_gpus else 'no'}"
+            f"Multi-GPU privilege: {'yes' if user.can_use_multiple_gpus else 'no'}\n"
+            f"Admin role: {'yes' if user.is_admin else 'no'}"
         )
         actions = [
             ("🚫 Deactivate" if user.is_active else "✅ Activate", ("toggle_active", user_id)),
@@ -96,6 +102,14 @@ async def _show_user_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             ("🔐 Server Access", ("access", user_id)),
             ("🗑 Remove", ("delete", user_id)),
         ]
+        if is_bootstrap_admin(update.effective_user.id, context):
+            actions.insert(
+                2,
+                (
+                    "🛡 Revoke admin" if user.is_admin else "🛡 Grant admin",
+                    ("toggle_admin", user_id),
+                ),
+            )
     markup = action_keyboard(context, actions)
     await update.effective_message.reply_text(text_out, reply_markup=markup, parse_mode="HTML")
     return AdminUserStates.MENU
@@ -153,6 +167,14 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context.user_data["_server_toggle_items"] = items
             context.user_data["_edit_access_ids"] = selected
             return await _render_edit_access_step(update, context)
+        if action == "toggle_admin":
+            if not is_bootstrap_admin(update.effective_user.id, context):
+                await update.effective_message.reply_text("⛔ Only a bootstrap admin can do that.")
+                return await _show_user_detail(update, context, user_id)
+            with session_scope() as session:
+                user = session.get(User, user_id)
+                user_service.set_admin(session, user, not user.is_admin)
+            return await _show_user_detail(update, context, user_id)
         if action == "revokeinvite":
             invite_id = user_id
             with session_scope() as session:

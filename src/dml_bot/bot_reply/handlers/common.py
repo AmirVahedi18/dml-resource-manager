@@ -43,25 +43,32 @@ HELP_TEXT_STUDENT = (
     "2. Step 2/2 — pick a date range (Today, or a day-count preset, limited by the booking "
     "horizon).\n"
     "3. You get a text chart of RAM usage over that range, plus a list of the reservations in it.\n\n"
-    "<b>🔔 Watches</b> — get notified when enough RAM frees up on a GPU:\n"
+    "<b>🔔 Watches</b> — get notified (or auto-booked) when enough RAM frees up on a GPU:\n"
     "1. Your active watches are listed (tap one to cancel it), alongside ➕ New Watch.\n"
     "2. New Watch: pick a GPU, then a date range to watch, then type the minimum RAM you need "
-    "freed.\n"
-    "3. You'll get a message here as soon as that much RAM becomes free in that range."
+    "freed, then choose ✅ Yes, auto-book or 🔕 No, just notify.\n"
+    "3. Just notify: you get a message here as soon as that much RAM becomes free in that range, "
+    "and re-reserve it yourself -- first to act wins if others are watching the same capacity.\n"
+    "4. Auto-book: the bot books the freed window for you automatically (from whenever it frees "
+    "through your watch's date range, capped by the lab's max reservation duration) and you get a "
+    "confirmation instead. If booking it fails for any reason (e.g. you're already at your active-"
+    "reservation limit), you get a plain notification instead so you can still act manually."
 )
 
 HELP_TEXT_ADMIN = (
     "<b>🛠 Admin Panel</b> — additional options only admins see:\n\n"
     "<b>👤 Manage Users</b>:\n"
-    "1. See all registered students (✅ active/🚫 inactive, ⭐ = multi-GPU privilege), or tap "
-    "➕ Add User.\n"
+    "1. See all registered students (✅ active/🚫 inactive, ⭐ = multi-GPU privilege, 🛡 = admin), "
+    "or tap ➕ Add User.\n"
     "2. Add User: type the student's full name, then pick at least one server to grant them "
     "access to -- you'll get a one-time invite code to send the student. They send /start "
     "&lt;code&gt; to this bot to finish registering themselves; no need to look up their "
     "Telegram ID first. Pending (not-yet-redeemed) invites are listed alongside registered "
     "students, with a 🗑 to revoke one.\n"
     "3. Tap a student to see actions: ✅/🚫 activate/deactivate, ⭐ grant/revoke multi-GPU, "
-    "✏️ rename, 🔐 edit server access, 🗑 permanently remove (with confirmation).\n\n"
+    "✏️ rename, 🔐 edit server access, 🗑 permanently remove (with confirmation). Bootstrap admins "
+    "(configured via ADMIN_IDS) additionally see 🛡 Grant/Revoke admin, to promote or demote a "
+    "user's DB-stored admin role without touching .env.\n\n"
     "<b>🖥 Manage Servers</b>:\n"
     "1. See all servers, or ➕ Add Server / ➕ Add GPU.\n"
     "2. Add Server: type a name. Add GPU: pick the server, type its index, model name, then pick "
@@ -86,7 +93,8 @@ HELP_TEXT_ADMIN = (
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Main menu:") -> None:
-    admin = is_admin(update.effective_user.id, context)
+    with session_scope() as session:
+        admin = is_admin(session, update.effective_user.id, context)
     await update.effective_message.reply_text(text, reply_markup=main_menu_keyboard(admin))
 
 
@@ -99,7 +107,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     telegram_id = update.effective_user.id
     with session_scope() as session:
         user = get_active_user(session, telegram_id)
-        if user is None and not is_admin(telegram_id, context):
+        if user is None and not is_admin(session, telegram_id, context):
             code = context.args[0] if context.args else None
             if code is None:
                 await update.effective_message.reply_text(
@@ -131,12 +139,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(HELP_TEXT_STUDENT, parse_mode="HTML")
-    if is_admin(update.effective_user.id, context):
+    with session_scope() as session:
+        admin = is_admin(session, update.effective_user.id, context)
+    if admin:
         await update.effective_message.reply_text(HELP_TEXT_ADMIN, parse_mode="HTML")
 
 
 async def admin_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id, context):
+    with session_scope() as session:
+        allowed = is_admin(session, update.effective_user.id, context)
+    if not allowed:
         await update.effective_message.reply_text("⛔ Admins only.")
         return
     await show_admin_menu(update, context)

@@ -215,6 +215,65 @@ async def test_admin_toggle_active_and_privilege(lab_setup):
     assert user.is_active is False
 
 
+async def test_bootstrap_admin_can_grant_and_revoke_admin_role(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot)
+    await manage_users.start(update, context)
+    alice_label = next(label for label in context.user_data["_choices"] if label.startswith("Alice"))
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, alice_label, bot)
+    await manage_users.menu_choice(update, context)
+
+    grant_label = next(
+        label for label, val in context.user_data["_choices"].items()
+        if isinstance(val, tuple) and val[0] == "toggle_admin"
+    )
+    assert grant_label.startswith("🛡 Grant admin")
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, grant_label, bot)
+    await manage_users.menu_choice(update, context)
+
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, lab_setup["telegram_id"])
+        assert user.is_admin is True
+
+    revoke_label = next(
+        label for label, val in context.user_data["_choices"].items()
+        if isinstance(val, tuple) and val[0] == "toggle_admin"
+    )
+    assert revoke_label.startswith("🛡 Revoke admin")
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, revoke_label, bot)
+    await manage_users.menu_choice(update, context)
+
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, lab_setup["telegram_id"])
+        assert user.is_admin is False
+
+
+async def test_promoted_admin_cannot_grant_admin_role_and_gets_no_toggle_button(lab_setup):
+    telegram_id = lab_setup["telegram_id"]
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        user_service.set_admin(session, user, True)
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    # The promoted (non-bootstrap) admin opens Manage Users and views their own record.
+    update = make_text_update(1, telegram_id, manage_users.MENU_BUTTON, bot)
+    await manage_users.start(update, context)
+    alice_label = next(label for label in context.user_data["_choices"] if label.startswith("Alice"))
+
+    update = make_text_update(2, telegram_id, alice_label, bot)
+    await manage_users.menu_choice(update, context)
+
+    assert not any(
+        isinstance(val, tuple) and val[0] == "toggle_admin"
+        for val in context.user_data["_choices"].values()
+    )
+
+
 async def test_admin_add_server_and_gpu_flow(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})

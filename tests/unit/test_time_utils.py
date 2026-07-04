@@ -18,6 +18,16 @@ def test_floor_to_slot_already_aligned_is_noop():
     assert tu.floor_to_slot(dt, 30) == dt
 
 
+def test_align_down_to_slot_rounds_down():
+    dt = datetime(2026, 7, 1, 8, 55)
+    assert tu.align_down_to_slot(dt, 30) == datetime(2026, 7, 1, 8, 30)
+
+
+def test_align_down_to_slot_already_aligned_is_noop():
+    dt = datetime(2026, 7, 1, 8, 30)
+    assert tu.align_down_to_slot(dt, 30) == dt
+
+
 def test_generate_slot_starts_respects_not_before():
     range_start = datetime(2026, 7, 1, 0, 0)
     range_end = datetime(2026, 7, 1, 2, 0)

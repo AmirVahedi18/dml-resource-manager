@@ -32,3 +32,12 @@ def test_set_privilege(db_session):
     user = us.register_user(db_session, telegram_id=1, full_name="Alice")
     us.set_privilege(db_session, user, True)
     assert user.can_use_multiple_gpus is True
+
+
+def test_set_admin(db_session):
+    user = us.register_user(db_session, telegram_id=1, full_name="Alice")
+    assert user.is_admin is False
+    us.set_admin(db_session, user, True)
+    assert user.is_admin is True
+    us.set_admin(db_session, user, False)
+    assert user.is_admin is False

@@ -14,15 +14,20 @@ not by the software.
 ## How it works
 
 - **Students** register with the admin (see [Registering a student](#registering-a-student)), then
-  reserve a GPU, browse the schedule, cancel a reservation, or get notified when a busy time range
-  frees up. There are two interfaces for this — the classic inline-button chat wizards, and a
+  reserve a GPU, browse the schedule, cancel a reservation, or watch a busy time range for freed
+  capacity — opting in to either a plain notification or automatic booking the instant it frees
+  (see [Watches and auto-booking](#watches-and-auto-booking)). There are two interfaces for this —
+  the classic inline-button chat wizards, and a
   persistent reply-keyboard menu (flat button grid docked below the message box) — but only one is
   active in a given deployment, chosen via `interface` in `configs/config.yaml` (see
   [Choosing an interface](#choosing-an-interface)). Both call the exact same reservation logic, so
   switching between them changes nothing about the rules.
-- **Admins** (configured via `ADMIN_IDS` in `.env`) manage users, servers/GPUs, the global
-  regulation (RAM/duration/booking-horizon limits), usage charts, and can override-cancel any
-  reservation lab-wide — in whichever interface is active.
+- **Admins** manage users, servers/GPUs, the global regulation (RAM/duration/booking-horizon
+  limits), usage charts, and can override-cancel any reservation lab-wide — in whichever interface
+  is active. `ADMIN_IDS` in `.env` is a fixed set of **bootstrap admins** that always have admin
+  rights and can't be revoked through the bot; a bootstrap admin can additionally promote any
+  registered user to a **DB-stored admin role** (e.g. a TA) from Manage Users, without touching
+  `.env` or redeploying (see [Multiple admins](#multiple-admins)).
 - A reservation is **self-service and auto-confirmed**: if it fits the GPU's free capacity and the
   regulation's limits, it's created immediately — no admin approval step.
 - Multiple students can share one GPU concurrently as long as their combined RAM never exceeds
@@ -88,7 +93,7 @@ reservation rules are enforced.
    | Variable             | Description                                                          |
    |----------------------|-----------------------------------------------------------------------|
    | `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather)                  |
-   | `ADMIN_IDS`          | Comma-separated Telegram numeric IDs of lab admins                    |
+   | `ADMIN_IDS`          | Comma-separated Telegram numeric IDs of bootstrap admins (see [Multiple admins](#multiple-admins)) |
    | `TZ`                 | IANA timezone used to display times to users (e.g. `Asia/Tehran`)     |
 
 3. **Review tunables** in `configs/` (all non-secret, all overridable on the command line via
@@ -248,6 +253,45 @@ invite code, so the admin never needs to look up the student's Telegram ID:
 
 A pending (not yet redeemed) invite is listed alongside registered students in **Manage Users**,
 with a 🗑 to revoke it if it was mistyped or is no longer needed.
+
+### Multiple admins
+
+`ADMIN_IDS` in `.env` is a fixed, comma-separated set of **bootstrap admins** — they always have
+admin rights (`src/dml_bot/bot/auth.py::is_bootstrap_admin`) regardless of anything stored in the
+database, so there's always at least one way in even if the database is wiped.
+
+A bootstrap admin can additionally promote any already-registered user to admin from **Manage
+Users → (select user) → 🛡 Grant admin** — this sets a DB-stored `User.is_admin` flag
+(`user_service.set_admin`) rather than editing `.env`, so it takes effect immediately with no
+redeploy, and can be revoked the same way (**🛡 Revoke admin**). A registered user must exist first
+(register them via an invite code, same as any student, then promote them).
+
+The 🛡 Grant/Revoke admin button is only shown to, and only actionable by, bootstrap admins — a
+user promoted via the DB role sees and uses every other admin feature identically, but cannot
+promote or demote anyone else's admin status. Deactivating a promoted admin's account
+(**🚫 Deactivate**) also removes their admin rights while inactive, same as it would for a student.
+
+### Watches and auto-booking
+
+**🔔 Watches** let a student ask to hear about free capacity on a GPU over a date range, without
+polling the schedule themselves: pick a GPU, a date range, and the minimum RAM needed, then choose
+what happens once that much RAM is actually free throughout the range:
+
+- **Just notify** (the default) — the student gets a push the instant enough capacity frees, and
+  must manually reserve it themselves; first to act wins if multiple students are watching the
+  same capacity.
+- **Auto-book** — instead of notifying, the bot books the freed window on the student's behalf the
+  instant a match is found: from whenever it frees through the watch's range end, capped by the
+  regulation's max reservation duration, at the RAM amount the student asked to be notified about.
+  The student still gets a push, now confirming the booking instead of asking them to act.
+
+Auto-booking reuses the exact same `reservation_service.create_reservation` validation as a normal
+reservation (slot alignment, RAM/duration/booking-horizon limits, the per-user active-reservation
+cap, the single-GPU-at-a-time rule) — it adds no rules of its own. If any of them reject the
+attempt (most commonly: the student is already at their active-reservation limit), the watch
+silently falls back to a plain notification instead of failing outright, so the student is never
+left without a signal that capacity is free. Either way — auto-booked or just notified — the watch
+is then consumed; a student who wants to keep watching after that must create a new one.
 
 ## Testing
 

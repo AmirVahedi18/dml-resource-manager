@@ -100,6 +100,44 @@ async def test_non_admin_is_rejected(lab_setup):
     assert "Admins only" in bot.send_message.call_args.kwargs["text"]
 
 
+async def test_bootstrap_admin_can_grant_and_revoke_admin_role(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+    with session_scope() as session:
+        user_id = user_service.get_user_by_telegram_id(session, lab_setup["telegram_id"]).id
+
+    update = make_callback_update(1, ADMIN_TELEGRAM_ID, f"adminusers:toggleadmin:{user_id}", bot)
+    state = await manage_users.toggle_admin(update, context)
+    assert state == AdminUserStates.MENU
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, lab_setup["telegram_id"]).is_admin is True
+
+    update = make_callback_update(2, ADMIN_TELEGRAM_ID, f"adminusers:toggleadmin:{user_id}", bot)
+    await manage_users.toggle_admin(update, context)
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, lab_setup["telegram_id"]).is_admin is False
+
+
+async def test_promoted_admin_cannot_toggle_admin_role(lab_setup):
+    telegram_id = lab_setup["telegram_id"]
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        user_service.set_admin(session, user, True)
+        user_id = user.id
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+    update = make_callback_update(1, telegram_id, f"adminusers:toggleadmin:{user_id}", bot)
+    state = await manage_users.toggle_admin(update, context)
+    assert state == AdminUserStates.MENU
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, telegram_id).is_admin is True  # unchanged
+    bot.answer_callback_query.assert_awaited()
+
+
 async def test_admin_add_server_and_gpu_flow(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
