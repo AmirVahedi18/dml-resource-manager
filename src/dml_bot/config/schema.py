@@ -61,6 +61,10 @@ class ScheduleChartConfig:
     # "View Schedule" date-range choices, in days (besides the always-present "Today"); any
     # option exceeding the regulation's booking horizon is hidden.
     range_days_options: list[int] = field(default_factory=lambda: [3, 5, 7, 10, 14])
+    # Seed value for the DB-stored chart renderer choice (see chart_settings_service), used only
+    # on first run -- after that, admins change it live via the bot's Chart Style screen. One of
+    # "legacy" (fixed-width text chart), "plotly_bars", "plotly_area", "plotly_gantt".
+    default_renderer: str = "legacy"
 
 
 @dataclass

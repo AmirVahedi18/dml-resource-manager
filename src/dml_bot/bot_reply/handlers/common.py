@@ -1,7 +1,9 @@
+from typing import Awaitable, Callable
+
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from dml_bot.bot.auth import get_active_user, is_admin
+from dml_bot.bot.auth import get_active_user, is_admin, is_bootstrap_admin
 from dml_bot.bot_reply.keyboards import (
     BACK,
     MAIN_MENU,
@@ -44,12 +46,14 @@ HELP_TEXT_STUDENT = (
     "3. You get a text chart of RAM usage over that range, plus a list of the reservations in it.\n\n"
     "<b>🔔 Watches</b> — get notified (or auto-booked) when enough RAM frees up on a GPU:\n"
     "1. Your active watches are listed (tap one to cancel it), alongside ➕ New Watch.\n"
-    "2. New Watch: pick a GPU, then a date range to watch, then type the minimum RAM you need "
-    "freed, then choose ✅ Yes, auto-book or 🔕 No, just notify.\n"
-    "3. Just notify: you get a message here as soon as that much RAM becomes free in that range, "
+    "2. New Watch steps through the same screens as Reserve GPU: Step 1/5 pick a GPU (its "
+    "availability chart is shown same as Reserve GPU), Step 2/5 pick a start date, Step 3/5 pick "
+    "a start time, Step 4/5 type the window's duration in hours, Step 5/5 type the minimum RAM "
+    "you need freed in that window -- then choose ✅ Yes, auto-book or 🔕 No, just notify.\n"
+    "3. Just notify: you get a message here as soon as that much RAM becomes free in that window, "
     "and re-reserve it yourself -- first to act wins if others are watching the same capacity.\n"
     "4. Auto-book: the bot books the freed window for you automatically (from whenever it frees "
-    "through your watch's date range, capped by the lab's max reservation duration) and you get a "
+    "through your watch's window end, capped by the lab's max reservation duration) and you get a "
     "confirmation instead. If booking it fails for any reason (e.g. you're already at your active-"
     "reservation limit), you get a plain notification instead so you can still act manually."
 )
@@ -96,6 +100,40 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"Your Telegram ID is: <code>{update.effective_user.id}</code>",
         parse_mode="HTML",
     )
+
+
+async def prompt_admin_self_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Bootstrap admins (`ADMIN_IDS` in `.env`) always have menu access but, unlike students, are
+    never issued an invite code -- so the first time one of them opens a student feature there's
+    no `User` row yet to attach reservations/watches to. Sends a one-time name prompt and returns
+    True if `update.effective_user` is such a bootstrap admin (the caller should transition to its
+    "awaiting name" state); returns False for anyone else, who should see the normal
+    not-registered message instead."""
+    if not is_bootstrap_admin(update.effective_user.id, context):
+        return False
+    await update.effective_message.reply_text(
+        "🛠 You're a lab admin without a student profile yet. What name should be shown on your "
+        "reservations? Send your full name:"
+    )
+    return True
+
+
+async def finish_admin_self_registration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    awaiting_state: int,
+    resume: Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[int]],
+) -> int:
+    """Handles the reply to `prompt_admin_self_registration`'s name prompt: creates the bootstrap
+    admin's `User` row, then resumes whichever flow triggered registration (by re-running its
+    `start`, now that a row exists for `get_active_user` to find)."""
+    full_name = (update.effective_message.text or "").strip()
+    if not full_name:
+        await update.effective_message.reply_text("Please send your name as plain text.")
+        return awaiting_state
+    with session_scope() as session:
+        user_service.register_user(session, update.effective_user.id, full_name)
+    return await resume(update, context)
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Main menu:") -> None:

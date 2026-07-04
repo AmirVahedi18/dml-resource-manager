@@ -49,7 +49,7 @@ src/dml_bot/
                            button grid docked below the message box), conversation wizards,
                            admin/student handlers
   scheduling/            APScheduler jobs: freed-slot notifications, pre-start reminders, cleanup
-  charts/                Matplotlib rendering for admin usage reports
+  charts/                Plotly rendering for admin usage reports (ranked horizontal bar chart)
   utils/                 Shared helpers (all datetimes are stored/compared as naive UTC, since
                            SQLite drops timezone info on round-trip)
 logs/                    Rotating log files (created at runtime)
@@ -132,10 +132,11 @@ no bounded set of choices (a new user's full name, a new server/GPU's name, a re
 new value).
 
 Right after Step 1/5 (choosing a GPU) in **Reserve GPU**, the bot automatically sends that GPU's
-RAM-occupancy chart (the same renderer as 🗓 Schedule) for today through `bot.date_picker_days_visible`
-days ahead — the same window the next step's date-picker offers — so a student can see free space
-before picking a date/time, with no extra tap required. It reuses `bot.date_picker_days_visible`
-(`configs/bot/default.yaml`, capped by the regulation's booking horizon) for the day count and
+RAM-occupancy chart (same renderer as 🗓 Schedule — see [Chart renderer](#chart-renderer)) for
+today through `bot.date_picker_days_visible` days ahead — the same window the next step's
+date-picker offers — so a student can see free space before picking a date/time, with no extra tap
+required. It reuses `bot.date_picker_days_visible` (`configs/bot/default.yaml`, capped by the
+regulation's booking horizon) for the day count and
 `schedule_chart.bucket_hours`/`schedule_chart.max_width_chars` for the chart's resolution/width —
 no separate config was added for this.
 
@@ -222,6 +223,35 @@ The exact reservation list below the chart shows each reservation's full start a
 The display timezone (`bot.timezone`) can be overridden without touching `configs/` by setting `TZ`
 in `.env` (e.g. `TZ=Asia/Tehran`) — if set, it takes precedence over `configs/bot/default.yaml`.
 
+#### Chart renderer
+
+The RAM-occupancy chart above appears in three places: "View Schedule", the availability chart
+Reserve GPU shows right after picking a GPU, and the equivalent chart in the New Watch wizard. All
+three are driven by the one admin-controlled setting below rather than each picking independently
+(`src/dml_bot/bot_reply/chart_delivery.py`), with four choices:
+
+- **`legacy`** (default) — the monospace text chart described above.
+- **`plotly_bars`** — a Plotly stacked bar chart: one bar per time bucket (same bucketing as
+  `legacy`), segmented and colored by user, with a dashed line at the GPU's total capacity. The
+  closest visual analog to `legacy`, just with real color identity per user instead of abbreviated
+  initials.
+- **`plotly_area`** — a Plotly stacked area chart that changes exactly at each reservation's
+  start/end (not snapped to buckets), colored by user, same capacity line.
+- **`plotly_gantt`** — a Plotly per-user timeline: one row per user, bars spanning each
+  reservation's exact start/end labeled with the RAM amount — easiest for tracing whose
+  reservation is whose, at the cost of not directly showing combined RAM load.
+
+The three Plotly renderers are sent as a single PNG photo (rendered via `kaleido`) rather than
+text, since Telegram can't show an interactive Plotly chart inline in chat; `legacy` is still sent
+as one or more `<pre>`-wrapped text messages, same as before. Colors follow a fixed 8-hue
+categorical order, assigned to the top 7 users by RAM usage in the shown window; any additional
+user folds into a shared gray "Other" series rather than generating a 9th hue.
+
+Seed value: `schedule_chart.default_renderer` in `configs/schedule_chart/default.yaml`, used only
+to populate the database on first run. After that, a bootstrap or DB-promoted admin switches it
+live from **🛠 Admin Panel → 🎨 Chart Style** — no redeploy needed, same pattern as **⚖️
+Regulation**.
+
 ### Registering a student
 
 The bot does not connect to any lab directory service. Registration is self-service via a one-time
@@ -253,6 +283,13 @@ The 🛡 Grant/Revoke admin button is only shown to, and only actionable by, boo
 user promoted via the DB role sees and uses every other admin feature identically, but cannot
 promote or demote anyone else's admin status. Deactivating a promoted admin's account
 (**🚫 Deactivate**) also removes their admin rights while inactive, same as it would for a student.
+
+A bootstrap admin can use every student feature too (Reserve GPU, My Reservations, Schedule,
+Watches), but — unlike a student — is never issued an invite code, so there's no `User` row to
+attach a reservation to until they've used one of those features once. The first time a bootstrap
+admin opens any student feature, the bot asks for the name to show on their reservations, creates
+their `User` row from that reply, then resumes straight into the feature they opened (no invite
+code or admin action needed — they're already trusted by virtue of being in `ADMIN_IDS`).
 
 ### Deploying with Docker
 
@@ -326,9 +363,12 @@ docker run -d --name dml-resource-manager --restart unless-stopped \
 
 ### Watches and auto-booking
 
-**🔔 Watches** let a student ask to hear about free capacity on a GPU over a date range, without
-polling the schedule themselves: pick a GPU, a date range, and the minimum RAM needed, then choose
-what happens once that much RAM is actually free throughout the range:
+**🔔 Watches** let a student ask to hear about free capacity on a GPU over a specific window,
+without polling the schedule themselves. Creating one steps through the same screens, in the same
+order, as **📅 Reserve GPU** (same availability chart after picking the GPU, same date picker, same
+start-time grid, same typed duration/RAM prompts) — the only difference is the final step, where
+instead of immediately reserving the window the student chooses what happens once that much RAM is
+actually free throughout it:
 
 - **Just notify** (the default) — the student gets a push the instant enough capacity frees, and
   must manually reserve it themselves; first to act wins if multiple students are watching the

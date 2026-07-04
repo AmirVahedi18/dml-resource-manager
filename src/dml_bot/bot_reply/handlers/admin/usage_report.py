@@ -23,6 +23,7 @@ PAST_RANGE_PRESETS = [
     ("Past 30 days", "month"),
     ("Full booking horizon", "horizon"),
 ]
+RANGE_LABELS = {key: label for label, key in PAST_RANGE_PRESETS}
 
 
 async def _render_scope_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -87,11 +88,13 @@ async def choose_range(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
         reservations = usage_service.get_reservations_in_range(session, range_start, range_end)
 
+        range_label = RANGE_LABELS[range_key]
         if scope == "user":
             totals = usage_service.total_gpu_hours_by_user(reservations, range_start, range_end)
             labels = [session.get(User, uid).full_name for uid in totals]
             ylabel = "GPU-hours"
-            title = "Usage by user"
+            title = f"Usage by user — {range_label}"
+            values = list(totals.values())
         else:
             totals = usage_service.total_ram_hours_by_gpu(reservations, range_start, range_end)
             gpus = {gid: session.get(GPU, gid) for gid in totals}
@@ -99,10 +102,9 @@ async def choose_range(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                 f"{gpus[gid].server.name} GPU{gpus[gid].index_on_server} ({fmt_ram(gpus[gid].total_ram_mb)})"
                 for gid in totals
             ]
-            ylabel = "MB-hours"
-            title = "Usage by GPU"
-
-        values = list(totals.values())
+            ylabel = "GB-hours"
+            title = f"Usage by GPU — {range_label}"
+            values = [mb_hours / 1024 for mb_hours in totals.values()]  # MB-hours -> GB-hours
 
     context.user_data.clear()
     if not values:

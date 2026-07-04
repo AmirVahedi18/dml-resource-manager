@@ -5,11 +5,17 @@ from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, Mess
 
 from dml_bot.bot.auth import get_active_user
 from dml_bot.bot.formatting import fmt_ram
+from dml_bot.bot_reply.chart_delivery import send_ram_chart
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.gpu_picker import accessible_server_ids_for, gpu_items, render_gpu_step
-from dml_bot.bot_reply.handlers.common import cancel_wizard, handle_back_or_cancel, show_main_menu
+from dml_bot.bot_reply.handlers.common import (
+    cancel_wizard,
+    finish_admin_self_registration,
+    handle_back_or_cancel,
+    prompt_admin_self_registration,
+    show_main_menu,
+)
 from dml_bot.bot_reply.keyboards import BACK, MAIN_MENU, action_keyboard
-from dml_bot.bot_reply.ram_chart import render_ram_chart
 from dml_bot.bot_reply.states import ScheduleStates
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.server import Server
@@ -40,6 +46,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with session_scope() as session:
         user = get_active_user(session, update.effective_user.id)
         if user is None:
+            if await prompt_admin_self_registration(update, context):
+                return ScheduleStates.AWAITING_ADMIN_NAME
             await update.effective_message.reply_text("You're not registered yet.")
             return ConversationHandler.END
         accessible_ids = accessible_server_ids_for(session, update.effective_user.id, user.id, context)
@@ -117,20 +125,12 @@ async def choose_range(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             for r in reservations
         ]
 
-    chart_pages = render_ram_chart(
-        reservations,
-        gpu.total_ram_mb,
-        range_start,
-        range_end,
-        tz_name,
-        config.schedule_chart.bucket_hours,
-        config.schedule_chart.max_width_chars,
+    label = f"{server.name} GPU{gpu.index_on_server}"
+    await send_ram_chart(
+        update, context, reservations, gpu.total_ram_mb, range_start, range_end, tz_name,
+        header_html=f"<b>{label}</b> — {_range_label(days)}",
+        title_plain=f"{label} — {_range_label(days)}",
     )
-
-    header = f"<b>{server.name} GPU{gpu.index_on_server}</b> — {_range_label(days)}"
-    await update.effective_message.reply_text(header, parse_mode="HTML")
-    for page in chart_pages:
-        await update.effective_message.reply_text(f"<pre>{page}</pre>", parse_mode="HTML")
 
     body = "\n".join(lines) if lines else "Fully free in this range."
     await update.effective_message.reply_text(f"{body}\n\n(times shown in {tz_name})", parse_mode="HTML")
@@ -147,6 +147,12 @@ def schedule_conversation() -> ConversationHandler:
         states={
             ScheduleStates.CHOOSE_GPU: [MessageHandler(text_filter, choose_gpu)],
             ScheduleStates.CHOOSE_RANGE: [MessageHandler(text_filter, choose_range)],
+            ScheduleStates.AWAITING_ADMIN_NAME: [
+                MessageHandler(
+                    text_filter,
+                    lambda u, c: finish_admin_self_registration(u, c, ScheduleStates.AWAITING_ADMIN_NAME, start),
+                )
+            ],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_schedule_conversation",

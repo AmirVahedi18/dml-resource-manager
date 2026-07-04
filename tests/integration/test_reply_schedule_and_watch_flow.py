@@ -50,6 +50,26 @@ async def test_view_schedule_shows_existing_reservation(lab_setup):
     assert "4096" in exact_list_text or "4 GB" in exact_list_text
 
 
+async def _drive_watch_to_ram_step(bot, context, telegram_id, update_id_start=3):
+    """Walks a fresh new-watch wizard from GPU choice through duration entry, landing on the RAM
+    step -- mirrors the reserve wizard's GPU -> date -> start time -> duration -> RAM steps."""
+    uid = update_id_start
+    gpu_label = _first_choice_label(context)
+    await watch_handlers.choose_gpu(make_text_update(uid, telegram_id, gpu_label, bot), context)
+    uid += 1
+
+    date_label = _first_choice_label(context)
+    await watch_handlers.choose_date(make_text_update(uid, telegram_id, date_label, bot), context)
+    uid += 1
+
+    time_label = _first_choice_label(context)
+    await watch_handlers.choose_start_time(make_text_update(uid, telegram_id, time_label, bot), context)
+    uid += 1
+
+    state = await watch_handlers.choose_duration(make_text_update(uid, telegram_id, "2", bot), context)
+    return state, uid + 1
+
+
 async def test_watch_created_then_listed_and_cancelled(lab_setup):
     telegram_id = lab_setup["telegram_id"]
     bot = FakeBot()
@@ -63,22 +83,17 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
     state = await watch_handlers.menu_choice(update, context)
     assert state == WatchFlowStates.CHOOSE_GPU
 
-    gpu_label = _first_choice_label(context)
-    update = make_text_update(3, telegram_id, gpu_label, bot)
-    state = await watch_handlers.choose_gpu(update, context)
-    assert state == WatchFlowStates.CHOOSE_RANGE
-
-    update = make_text_update(4, telegram_id, "This week", bot)
-    state = await watch_handlers.choose_range(update, context)
+    state, uid = await _drive_watch_to_ram_step(bot, context, telegram_id)
     assert state == WatchFlowStates.CHOOSE_RAM
 
-    update = make_text_update(5, telegram_id, "2", bot)
-    state = await watch_handlers.choose_ram(update, context)
+    state = await watch_handlers.choose_ram(make_text_update(uid, telegram_id, "2", bot), context)
     assert state == WatchFlowStates.CHOOSE_AUTO_BOOK
+    uid += 1
 
-    update = make_text_update(6, telegram_id, "🔕 No, just notify", bot)
+    update = make_text_update(uid, telegram_id, "🔕 No, just notify", bot)
     state = await watch_handlers.choose_auto_book(update, context)
     assert state == ConversationHandler.END
+    uid += 1
 
     with session_scope() as session:
         user = user_service.get_user_by_telegram_id(session, telegram_id)
@@ -87,16 +102,20 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
     assert watches[0].min_ram_needed_mb == 2048
     assert watches[0].auto_book is False
 
-    update = make_text_update(7, telegram_id, watch_handlers.MENU_BUTTON, bot)
+    update = make_text_update(uid, telegram_id, watch_handlers.MENU_BUTTON, bot)
     state = await watch_handlers.start(update, context)
     assert state == WatchFlowStates.MENU
+    uid += 1
 
     watch_label = _first_choice_label(context)
-    update = make_text_update(8, telegram_id, watch_label, bot)
+    assert "<b>" not in watch_label and "</b>" not in watch_label  # button labels are plain text
+    update = make_text_update(uid, telegram_id, watch_label, bot)
     state = await watch_handlers.menu_choice(update, context)
     assert state == WatchFlowStates.CONFIRM_CANCEL
+    assert bot.send_message.call_args.kwargs["parse_mode"] == "HTML"  # <b> tags in the body render
+    uid += 1
 
-    update = make_text_update(9, telegram_id, CONFIRM, bot)
+    update = make_text_update(uid, telegram_id, CONFIRM, bot)
     state = await watch_handlers.confirm_cancel(update, context)
     assert state == ConversationHandler.END
 
@@ -112,18 +131,19 @@ async def test_watch_ram_rejects_non_integer_and_out_of_range(lab_setup):
 
     await watch_handlers.start(make_text_update(1, telegram_id, watch_handlers.MENU_BUTTON, bot), context)
     await watch_handlers.menu_choice(make_text_update(2, telegram_id, watch_handlers.NEW_WATCH, bot), context)
-    gpu_label = _first_choice_label(context)
-    await watch_handlers.choose_gpu(make_text_update(3, telegram_id, gpu_label, bot), context)
-    await watch_handlers.choose_range(make_text_update(4, telegram_id, "This week", bot), context)
+    state, uid = await _drive_watch_to_ram_step(bot, context, telegram_id)
+    assert state == WatchFlowStates.CHOOSE_RAM
 
     # non-integer text
-    state = await watch_handlers.choose_ram(make_text_update(5, telegram_id, "lots", bot), context)
+    state = await watch_handlers.choose_ram(make_text_update(uid, telegram_id, "lots", bot), context)
     assert state == WatchFlowStates.CHOOSE_RAM
+    uid += 1
 
     # the GPU has 40GB total -- 999 is way over
-    state = await watch_handlers.choose_ram(make_text_update(6, telegram_id, "999", bot), context)
+    state = await watch_handlers.choose_ram(make_text_update(uid, telegram_id, "999", bot), context)
     assert state == WatchFlowStates.CHOOSE_RAM
+    uid += 1
 
     # zero is below the 1-unit minimum
-    state = await watch_handlers.choose_ram(make_text_update(7, telegram_id, "0", bot), context)
+    state = await watch_handlers.choose_ram(make_text_update(uid, telegram_id, "0", bot), context)
     assert state == WatchFlowStates.CHOOSE_RAM

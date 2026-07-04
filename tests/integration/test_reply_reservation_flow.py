@@ -1,5 +1,6 @@
 from telegram.ext import ConversationHandler
 
+from dml_bot.bot_reply.handlers.common import finish_admin_self_registration
 from dml_bot.bot_reply.handlers.student import cancel_reservation as cancel_handlers
 from dml_bot.bot_reply.handlers.student import reserve as reserve_handlers
 from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, NEXT_PAGE, PREV_PAGE
@@ -78,6 +79,40 @@ async def test_choosing_a_gpu_shows_its_availability_chart_before_the_date_step(
     # The date step's keyboard is still the very last message sent, unaffected by the chart.
     date_markup = bot.send_message.call_args.kwargs["reply_markup"]
     assert date_markup is not None
+
+
+async def test_availability_chart_renders_an_existing_reservations_occupant_name(lab_setup):
+    """Regression test: the availability chart's legacy renderer reads `r.user.full_name` for
+    every overlapping reservation *after* the DB session that fetched them has closed -- with no
+    reservations in the window (as in the test above) that lazy load never fires, so this needs
+    at least one real overlapping reservation to actually exercise it and catch a
+    DetachedInstanceError."""
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    from datetime import timedelta
+
+    from dml_bot.db.models.gpu import GPU
+    from dml_bot.utils.time_utils import floor_to_slot, utc_now
+
+    start = floor_to_slot(utc_now(), 30) + timedelta(hours=1)
+    end = start + timedelta(hours=2)
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        regulation = regulation_service.get_regulation(session)
+        reservation_service.create_reservation(session, user, gpu, start, end, 4096, regulation)
+
+    bot = FakeBot()
+    context = make_context()
+    update = make_text_update(1, telegram_id, reserve_handlers.MENU_BUTTON, bot)
+    await reserve_handlers.start(update, context)
+
+    gpu_label = _first_choice_label(context)
+    update = make_text_update(2, telegram_id, gpu_label, bot)
+    state = await reserve_handlers.choose_gpu(update, context)
+    assert state == ReserveStates.CHOOSE_DATE
+
+    texts = [c.kwargs["text"] for c in bot.send_message.call_args_list]
+    assert any("Alice" in t for t in texts)  # abbreviated occupant name rendered into the chart
 
 
 async def test_reserve_unregistered_user_is_rejected(lab_setup):
@@ -414,3 +449,28 @@ async def test_admin_sees_all_gpus_regardless_of_access(lab_setup):
 
     assert state == ReserveStates.CHOOSE_GPU
     assert len(context.user_data["_gpu_items"]) == 2  # both servers' GPUs, unrestricted
+
+
+async def test_unregistered_bootstrap_admin_is_prompted_for_a_name_then_can_reserve(lab_setup):
+    admin_telegram_id = 4242  # in admin_ids below, but has no User row yet
+
+    bot = FakeBot()
+    context = make_context(admin_ids={admin_telegram_id})
+    update = make_text_update(1, admin_telegram_id, reserve_handlers.MENU_BUTTON, bot)
+    state = await reserve_handlers.start(update, context)
+
+    assert state == ReserveStates.AWAITING_ADMIN_NAME
+    prompt = bot.send_message.call_args.kwargs["text"]
+    assert "name" in prompt.lower()
+
+    update = make_text_update(2, admin_telegram_id, "Dr. Admin", bot)
+    state = await finish_admin_self_registration(
+        update, context, ReserveStates.AWAITING_ADMIN_NAME, reserve_handlers.start
+    )
+
+    # Registration succeeded and the reserve flow resumed straight into GPU selection.
+    assert state == ReserveStates.CHOOSE_GPU
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, admin_telegram_id)
+    assert user is not None
+    assert user.full_name == "Dr. Admin"

@@ -8,3 +8,8 @@ max_width_chars: 50
 # Date-range choices offered by "View Schedule", in days (besides the always-present "Today").
 # Any option longer than the regulation's booking horizon is hidden from the menu.
 range_days_options: [3, 5, 7, 10, 14]
+
+# Seed value for the DB-stored chart renderer (see chart_settings_service) -- only used to
+# populate the database on first run; after that, admins change it live via the bot's
+# 🎨 Chart Style screen. One of: legacy, plotly_bars, plotly_area, plotly_gantt.
+default_renderer: plotly_bars

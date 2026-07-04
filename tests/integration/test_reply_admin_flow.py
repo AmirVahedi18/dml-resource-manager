@@ -850,3 +850,23 @@ async def test_admin_back_and_main_menu_navigation(lab_setup):
     update = make_text_update(7, ADMIN_TELEGRAM_ID, MAIN_MENU, bot2)
     state = await manage_users.menu_choice(update, context2)
     assert state == ConversationHandler.END
+
+
+async def test_bootstrap_admin_is_marked_with_key_emoji_in_user_list_and_detail(lab_setup):
+    with session_scope() as session:
+        user_service.register_user(session, telegram_id=ADMIN_TELEGRAM_ID, full_name="Dr. Admin")
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot)
+    await manage_users.start(update, context)
+
+    admin_label = next(label for label in context.user_data["_choices"] if label.startswith("Dr. Admin"))
+    alice_label = next(label for label in context.user_data["_choices"] if label.startswith("Alice"))
+    assert "🔑" in admin_label
+    assert "🔑" not in alice_label
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, admin_label, bot)
+    await manage_users.menu_choice(update, context)
+    detail_text = bot.send_message.call_args.kwargs["text"]
+    assert "🔑 yes" in detail_text

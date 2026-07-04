@@ -1,3 +1,4 @@
+from dml_bot.db.models.chart_settings import ChartSettings
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.invite_code import InviteCode
 from dml_bot.db.models.regulation import Regulation
@@ -8,6 +9,7 @@ from dml_bot.db.models.user import User
 from dml_bot.db.models.watch import WatchSubscription
 
 __all__ = [
+    "ChartSettings",
     "GPU",
     "InviteCode",
     "Regulation",

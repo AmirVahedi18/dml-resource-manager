@@ -47,7 +47,10 @@ def main_menu_keyboard(is_admin: bool) -> ReplyKeyboardMarkup:
 
 
 def admin_menu_keyboard(columns: int = 1) -> ReplyKeyboardMarkup:
-    items = ["👤 Manage Users", "🖥 Manage Servers", "⚖️ Regulation", "📊 Usage Report", "📋 All Reservations"]
+    items = [
+        "👤 Manage Users", "🖥 Manage Servers", "⚖️ Regulation", "📊 Usage Report", "📋 All Reservations",
+        "🎨 Chart Style",
+    ]
     item_rows = [items[i : i + columns] for i in range(0, len(items), columns)]
     return _markup([*item_rows, [BACK_TO_MAIN]])
 

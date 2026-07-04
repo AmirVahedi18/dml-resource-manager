@@ -8,14 +8,16 @@ from dml_bot.bot.formatting import fmt_dt, fmt_duration_hours, fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
+    finish_admin_self_registration,
     handle_back_or_cancel,
+    prompt_admin_self_registration,
     render_paginated_step,
     show_main_menu,
 )
+from dml_bot.bot_reply.chart_delivery import send_ram_chart
 from dml_bot.bot_reply.gpu_picker import accessible_server_ids_for, gpu_items, render_gpu_step
 from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, cancel_only_keyboard, confirm_keyboard
 from dml_bot.bot_reply.presets import ram_unit_mb
-from dml_bot.bot_reply.ram_chart import render_ram_chart
 from dml_bot.bot_reply.states import ReserveStates
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.server import Server
@@ -34,6 +36,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with session_scope() as session:
         user = get_active_user(session, update.effective_user.id)
         if user is None:
+            if await prompt_admin_self_registration(update, context):
+                return ReserveStates.AWAITING_ADMIN_NAME
             await update.effective_message.reply_text(
                 "You're not registered yet. Send /myid and ask the lab admin to register you."
             )
@@ -75,8 +79,7 @@ async def _send_availability_chart(update: Update, context: ContextTypes.DEFAULT
     """Shows the same RAM-occupancy chart as 🗓 Schedule, but for a fixed range (today -> `days`
     days ahead, matching the date-picker's visible window) rather than a range the user picks --
     lets a student see free space on this GPU before choosing a date/time."""
-    config = context.application.bot_data["config"]
-    tz_name = config.bot.timezone
+    tz_name = context.application.bot_data["config"].bot.timezone
     now = utc_now()
     range_start, range_end = now, now + timedelta(days=days)
 
@@ -84,20 +87,14 @@ async def _send_availability_chart(update: Update, context: ContextTypes.DEFAULT
         gpu = session.get(GPU, gpu_id)
         server = session.get(Server, gpu.server_id)
         reservations = reservation_service.list_reservations_for_gpu(session, gpu.id, range_start, range_end)
-        chart_pages = render_ram_chart(
-            reservations,
-            gpu.total_ram_mb,
-            range_start,
-            range_end,
-            tz_name,
-            config.schedule_chart.bucket_hours,
-            config.schedule_chart.max_width_chars,
-        )
-        header = f"<b>{server.name} GPU{gpu.index_on_server}</b> — availability for the next {days} day(s)"
+        cap_mb = gpu.total_ram_mb
+        label = f"{server.name} GPU{gpu.index_on_server}"
 
-    await update.effective_message.reply_text(header, parse_mode="HTML")
-    for page in chart_pages:
-        await update.effective_message.reply_text(f"<pre>{page}</pre>", parse_mode="HTML")
+    await send_ram_chart(
+        update, context, reservations, cap_mb, range_start, range_end, tz_name,
+        header_html=f"<b>{label}</b> — availability for the next {days} day(s)",
+        title_plain=f"{label} — availability for the next {days} day(s)",
+    )
 
 
 async def choose_gpu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -333,6 +330,12 @@ def reserve_conversation() -> ConversationHandler:
             ReserveStates.CHOOSE_DURATION: [MessageHandler(text_filter, choose_duration)],
             ReserveStates.CHOOSE_RAM: [MessageHandler(text_filter, choose_ram)],
             ReserveStates.CONFIRM: [MessageHandler(text_filter, confirm)],
+            ReserveStates.AWAITING_ADMIN_NAME: [
+                MessageHandler(
+                    text_filter,
+                    lambda u, c: finish_admin_self_registration(u, c, ReserveStates.AWAITING_ADMIN_NAME, start),
+                )
+            ],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_reserve_conversation",

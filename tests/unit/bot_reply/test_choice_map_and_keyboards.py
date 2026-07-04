@@ -105,7 +105,8 @@ def test_admin_menu_keyboard_renders_as_a_3_column_grid_with_back_row_separate()
         "⚖️ Regulation",
         "📊 Usage Report",
         "📋 All Reservations",
+        "🎨 Chart Style",
     ]
     assert len(item_rows[0]) == 3
-    assert len(item_rows[1]) == 2
+    assert len(item_rows[1]) == 3
     assert [btn.text for btn in markup.keyboard[-1]] == [BACK_TO_MAIN]

@@ -34,7 +34,7 @@ def _server_toggle_items(session) -> list[tuple[str, int]]:
     return [(server.name, server.id) for server in server_service.list_servers(session)]
 
 
-def _user_items(session) -> list[tuple[str, int | tuple]]:
+def _user_items(session, context: ContextTypes.DEFAULT_TYPE) -> list[tuple[str, int | tuple]]:
     """Registered users (value = user id, tapping opens the detail screen) followed by pending,
     not-yet-redeemed invites (value = ("revokeinvite", invite id), tapping revokes it) -- both
     share this one paginated list since they're both "who's on the roster" from an admin's view."""
@@ -44,6 +44,7 @@ def _user_items(session) -> list[tuple[str, int | tuple]]:
         flags = (
             ("✅" if u.is_active else "🚫")
             + (" " + gpu_label if gpu_label else "")
+            + (" 🔑" if is_bootstrap_admin(u.telegram_id, context) else "")
             + (" 🛡" if u.is_admin else "")
         )
         items.append((f"{u.full_name} {flags}", u.id))
@@ -61,7 +62,7 @@ async def _render_list_step(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context, items, page, extra_rows=[[ADD_USER]], columns=grid.columns, rows=grid.rows
     )
     text = (
-        "Registered users (✅ active, 🚫 inactive, ⭐ privileged, 🛡 admin); "
+        "Registered users (✅ active, 🚫 inactive, ⭐ privileged, 🔑 bootstrap admin, 🛡 admin); "
         "📨 = pending invite, tap to revoke:"
         if items
         else "No users registered yet."
@@ -75,7 +76,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     with session_scope() as session:
-        items = _user_items(session)
+        items = _user_items(session, context)
     context.user_data.clear()
     context.user_data["_user_items"] = items
     context.user_data["_page"] = 0
@@ -91,7 +92,8 @@ async def _show_user_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"Telegram ID: {user.telegram_id}\n"
             f"Status: {'active' if user.is_active else 'inactive'}\n"
             f"Max concurrent GPUs: {user.max_concurrent_gpus}\n"
-            f"Admin role: {'yes' if user.is_admin else 'no'}"
+            f"Admin role: {'yes' if user.is_admin else 'no'}\n"
+            f"Bootstrap admin (.env): {'🔑 yes' if is_bootstrap_admin(user.telegram_id, context) else 'no'}"
         )
         actions = [
             ("🚫 Deactivate" if user.is_active else "✅ Activate", ("toggle_active", user_id)),
@@ -189,7 +191,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 invite = session.get(InviteCode, invite_id)
                 if invite is not None:
                     invite_service.revoke_invite(session, invite)
-                items = _user_items(session)
+                items = _user_items(session, context)
             context.user_data["_user_items"] = items
             context.user_data["_page"] = 0
             return await _render_list_step(update, context)
@@ -198,7 +200,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             user = session.get(User, user_id)
             if action == "toggle_active":
                 user_service.set_active(session, user, not user.is_active)
-            items = _user_items(session)
+            items = _user_items(session, context)
         context.user_data["_user_items"] = items
         context.user_data["_page"] = 0
         return await _render_list_step(update, context)
@@ -219,7 +221,7 @@ async def receive_rename(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     with session_scope() as session:
         user = session.get(User, context.user_data["_viewing_user_id"])
         user_service.rename_user(session, user, text)
-        items = _user_items(session)
+        items = _user_items(session, context)
     context.user_data["_user_items"] = items
     context.user_data["_page"] = 0
     await update.effective_message.reply_text(f"✅ Renamed to {text}.")
@@ -246,7 +248,7 @@ async def receive_max_gpus(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with session_scope() as session:
         user = session.get(User, user_id)
         user_service.set_max_concurrent_gpus(session, user, max_gpus)
-        items = _user_items(session)
+        items = _user_items(session, context)
     context.user_data["_user_items"] = items
     context.user_data["_page"] = 0
     await update.effective_message.reply_text(f"✅ Max concurrent GPUs set to {max_gpus}.")
@@ -267,7 +269,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user = session.get(User, context.user_data["_viewing_user_id"])
         name = user.full_name
         user_service.delete_user(session, user)
-        items = _user_items(session)
+        items = _user_items(session, context)
     context.user_data["_user_items"] = items
     context.user_data["_page"] = 0
     await update.effective_message.reply_text(f"🗑 Deleted {name}.")

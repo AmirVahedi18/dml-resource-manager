@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.regulation import Regulation
@@ -256,8 +256,11 @@ def list_users_with_active_reservations(session: Session, now: datetime | None =
 def list_reservations_for_gpu(
     session: Session, gpu_id: int, range_start: datetime, range_end: datetime
 ) -> list[Reservation]:
+    """Eager-loads `Reservation.user` (`joinedload`) since every caller reads `r.user.full_name`
+    for chart rendering/summaries, some of them after the session that fetched the list has
+    closed -- without this, that lazy load raises `DetachedInstanceError`."""
     range_start, range_end = to_naive_utc(range_start), to_naive_utc(range_end)
-    stmt = select(Reservation).where(
+    stmt = select(Reservation).options(joinedload(Reservation.user)).where(
         Reservation.gpu_id == gpu_id,
         Reservation.status == ReservationStatus.ACTIVE,
         Reservation.start_time < range_end,

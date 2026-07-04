@@ -1,6 +1,7 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from dml_bot.bot_reply.handlers.admin.chart_settings_admin import chart_settings_conversation
 from dml_bot.bot_reply.handlers.admin.manage_regulation import regulation_conversation
 from dml_bot.bot_reply.handlers.admin.manage_servers import servers_conversation
 from dml_bot.bot_reply.handlers.admin.manage_users import users_conversation
@@ -31,7 +32,7 @@ async def _fallback_show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def build_reply_application(token: str, admin_ids: set[int], config: AppConfig) -> Application:
     """Registers the persistent reply-keyboard bot: /start, /help, /myid, /cancel, the top-level
-    menu router, then the 4 student + 5 admin conversation wizards."""
+    menu router, then the 4 student + 6 admin conversation wizards."""
     application = Application.builder().token(token).build()
     application.bot_data["admin_ids"] = admin_ids
     application.bot_data["config"] = config
@@ -54,6 +55,7 @@ def build_reply_application(token: str, admin_ids: set[int], config: AppConfig) 
     application.add_handler(regulation_conversation())
     application.add_handler(usage_conversation())
     application.add_handler(admin_reservations_conversation())
+    application.add_handler(chart_settings_conversation())
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _fallback_show_menu))
     return application

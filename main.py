@@ -13,7 +13,7 @@ from dml_bot.config.schema import AppConfig, register_configs
 from dml_bot.db.session import init_engine, session_scope
 from dml_bot.logging_setup import setup_logging
 from dml_bot.scheduling.jobs import build_scheduler
-from dml_bot.services import regulation_service
+from dml_bot.services import chart_settings_service, regulation_service
 
 register_configs()
 
@@ -60,6 +60,7 @@ def main(cfg: DictConfig) -> None:
     init_engine(app_cfg.database.path, echo=app_cfg.database.echo)
     with session_scope() as session:
         regulation_service.ensure_seeded(session, app_cfg.regulation)
+        chart_settings_service.ensure_seeded(session, app_cfg.schedule_chart.default_renderer)
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     admin_ids = {int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()}

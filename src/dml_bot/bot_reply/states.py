@@ -8,16 +8,19 @@ class ReserveStates(IntEnum):
     CHOOSE_DURATION = auto()
     CHOOSE_RAM = auto()
     CONFIRM = auto()
+    AWAITING_ADMIN_NAME = auto()
 
 
 class CancelStates(IntEnum):
     CHOOSE_RESERVATION = auto()
     CONFIRM = auto()
+    AWAITING_ADMIN_NAME = auto()
 
 
 class ScheduleStates(IntEnum):
     CHOOSE_GPU = auto()
     CHOOSE_RANGE = auto()
+    AWAITING_ADMIN_NAME = auto()
 
 
 class WatchFlowStates(IntEnum):
@@ -28,9 +31,12 @@ class WatchFlowStates(IntEnum):
     MENU = auto()
     CONFIRM_CANCEL = auto()
     CHOOSE_GPU = auto()
-    CHOOSE_RANGE = auto()
+    CHOOSE_DATE = auto()
+    CHOOSE_START_TIME = auto()
+    CHOOSE_DURATION = auto()
     CHOOSE_RAM = auto()
     CHOOSE_AUTO_BOOK = auto()
+    AWAITING_ADMIN_NAME = auto()
 
 
 class AdminUserStates(IntEnum):
@@ -62,6 +68,10 @@ class AdminServerStates(IntEnum):
 class AdminRegulationStates(IntEnum):
     MENU = auto()
     EDIT_VALUE = auto()
+
+
+class AdminChartStates(IntEnum):
+    MENU = auto()
 
 
 class AdminUsageStates(IntEnum):

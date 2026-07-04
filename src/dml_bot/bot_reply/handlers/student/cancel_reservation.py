@@ -6,7 +6,9 @@ from dml_bot.bot.formatting import fmt_dt, fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
+    finish_admin_self_registration,
     handle_back_or_cancel,
+    prompt_admin_self_registration,
     render_paginated_step,
     show_main_menu,
 )
@@ -44,6 +46,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with session_scope() as session:
         user = get_active_user(session, update.effective_user.id)
         if user is None:
+            if await prompt_admin_self_registration(update, context):
+                return CancelStates.AWAITING_ADMIN_NAME
             await update.effective_message.reply_text("You're not registered yet.")
             return ConversationHandler.END
         items = await _reservation_items(session, update.effective_user.id, tz_name)
@@ -119,6 +123,12 @@ def cancel_reservation_conversation() -> ConversationHandler:
         states={
             CancelStates.CHOOSE_RESERVATION: [MessageHandler(text_filter, choose_reservation)],
             CancelStates.CONFIRM: [MessageHandler(text_filter, confirm)],
+            CancelStates.AWAITING_ADMIN_NAME: [
+                MessageHandler(
+                    text_filter,
+                    lambda u, c: finish_admin_self_registration(u, c, CancelStates.AWAITING_ADMIN_NAME, start),
+                )
+            ],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_cancel_reservation_conversation",
