@@ -77,6 +77,9 @@ class AdminChartStates(IntEnum):
 class AdminUsageStates(IntEnum):
     CHOOSE_SCOPE = auto()
     CHOOSE_RANGE = auto()
+    CHOOSE_HISTORICAL_GPU = auto()
+    TYPE_HISTORICAL_START_DATE = auto()
+    TYPE_HISTORICAL_DURATION_DAYS = auto()
 
 
 class AdminReservationsStates(IntEnum):

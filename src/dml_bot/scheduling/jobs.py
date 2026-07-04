@@ -60,14 +60,13 @@ async def run_reminder_check(session: Session, bot, tz_name: str, lead_minutes: 
 
 
 def run_cleanup(session: Session, retention_days: int) -> int:
+    """Deletes long-since-consumed `WatchSubscription` rows only. `Reservation` rows are kept
+    forever -- admins can review a GPU's historical availability indefinitely via Usage Report's
+    📅 Historical Availability screen, which needs the full history to still be there."""
     from dml_bot.db.models.watch import WatchSubscription
 
     cutoff = utc_now() - timedelta(days=retention_days)
     deleted = 0
-
-    for reservation in session.execute(select(Reservation).where(Reservation.end_time < cutoff)).scalars().all():
-        session.delete(reservation)
-        deleted += 1
 
     stale_watches = session.execute(
         select(WatchSubscription).where(

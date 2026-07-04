@@ -36,29 +36,35 @@ async def send_ram_chart(
     tz_name: str,
     header_html: str,
     title_plain: str,
+    bucket_hours: float | None = None,
 ) -> None:
     """`header_html` (e.g. "<b>lab-server-1 GPU0</b> -- next 7 days") is used for the legacy
     chart's separate header message; `title_plain` (no markup) is baked into the Plotly image
     itself, since Plotly renders its own title text rather than parsing Telegram HTML.
+    `bucket_hours` overrides `schedule_chart.bucket_hours` -- callers with an admin-chosen (rather
+    than fixed-config) range pass a duration-scaled value so a long historical window doesn't
+    blow up into thousands of buckets.
 
-    All three screens that show this chart (Reserve GPU's and Watches' pre-date-picker
-    availability charts, and View Schedule) render with the same admin-configured renderer (see
-    `chart_settings_service`) -- there's exactly one renderer choice, not one per screen."""
+    All screens that show this chart (Reserve GPU's and Watches' pre-date-picker availability
+    charts, View Schedule, and Usage Report's Historical Availability) render with the same
+    admin-configured renderer (see `chart_settings_service`) -- there's exactly one renderer
+    choice, not one per screen."""
     with session_scope() as session:
         renderer = chart_settings_service.get_renderer(session)
 
+    config = context.application.bot_data["config"].schedule_chart
+    effective_bucket_hours = bucket_hours if bucket_hours is not None else config.bucket_hours
+
     if renderer not in _PLOTLY_RENDERERS:
-        config = context.application.bot_data["config"].schedule_chart
         await update.effective_message.reply_text(header_html, parse_mode="HTML")
         pages = render_ram_chart(
-            reservations, cap_mb, range_start, range_end, tz_name, config.bucket_hours, config.max_width_chars
+            reservations, cap_mb, range_start, range_end, tz_name, effective_bucket_hours, config.max_width_chars
         )
         for page in pages:
             await update.effective_message.reply_text(f"<pre>{page}</pre>", parse_mode="HTML")
         return
 
-    config = context.application.bot_data["config"].schedule_chart
     png = _PLOTLY_RENDERERS[renderer](
-        reservations, cap_mb, range_start, range_end, tz_name, config.bucket_hours, title_plain
+        reservations, cap_mb, range_start, range_end, tz_name, effective_bucket_hours, title_plain
     )
     await update.effective_message.reply_photo(photo=png)

@@ -1,3 +1,5 @@
 poll_interval_seconds: 60
 reminder_minutes_before: 15
+# How long a cancelled/consumed watch subscription lingers before cleanup deletes it.
+# Reservations are never deleted by cleanup -- kept forever for historical availability charts.
 cleanup_retention_days: 30

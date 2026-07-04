@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 from freezegun import freeze_time
 
+from dml_bot.db.models.reservation import Reservation
 from dml_bot.scheduling import jobs
 from dml_bot.services import reservation_service, watch_service
 from dml_bot.utils.time_utils import floor_to_slot, utc_now
@@ -129,15 +130,16 @@ async def test_run_reminder_check_ignores_far_future_reservations(db_session):
     bot.send_message.assert_not_awaited()
 
 
-def test_run_cleanup_deletes_old_reservations_and_stale_watches(db_session):
+def test_run_cleanup_keeps_reservations_forever_but_deletes_stale_watches(db_session):
     server, gpu, regulation, occupier = _setup(db_session)
 
     far_past_now = utc_now() - timedelta(days=40)
     start = floor_to_slot(far_past_now, 30) + timedelta(hours=1)
     end = start + timedelta(hours=1)
-    reservation_service.create_reservation(
+    reservation = reservation_service.create_reservation(
         db_session, occupier, gpu, start, end, 4096, regulation, now=far_past_now
     )
+    reservation_id = reservation.id
 
     watcher = make_user(db_session, telegram_id=3, full_name="Watcher2")
     stale_watch = watch_service.create_watch(db_session, watcher, gpu, start, end, 1000)
@@ -147,4 +149,7 @@ def test_run_cleanup_deletes_old_reservations_and_stale_watches(db_session):
     db_session.flush()
 
     deleted = jobs.run_cleanup(db_session, retention_days=30)
-    assert deleted == 2
+    assert deleted == 1  # only the stale watch -- reservations are never deleted by cleanup
+
+    # The 40-day-old reservation is still there for historical availability charts to read.
+    assert db_session.get(Reservation, reservation_id) is not None

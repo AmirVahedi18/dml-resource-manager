@@ -44,6 +44,9 @@ class RegulationConfig:
 class SchedulerConfig:
     poll_interval_seconds: int = 60
     reminder_minutes_before: int = 15
+    # How long a cancelled/consumed watch subscription lingers before cleanup deletes it.
+    # Reservations are never deleted by cleanup -- they're kept forever for Usage Report's
+    # 📅 Historical Availability screen.
     cleanup_retention_days: int = 30
 
 

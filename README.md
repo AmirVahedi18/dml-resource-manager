@@ -102,8 +102,9 @@ exactly one place reservation rules are enforced.
    - `configs/logging/default.yaml` — log level, rotation size/backups, log directory
    - `configs/regulation/default.yaml` — seed values for the global regulation (only used to
      populate the database on first run; after that, admins edit it live via the bot)
-   - `configs/scheduler/default.yaml` — background job poll interval, reminder lead time, cleanup
-     retention window
+   - `configs/scheduler/default.yaml` — background job poll interval, reminder lead time, stale
+     watch-subscription retention window (reservations are never auto-deleted; see
+     [Historical availability](#historical-availability-reservations-are-kept-forever))
    - `configs/ram_input/default.yaml`, `configs/schedule_chart/default.yaml`,
      `configs/list_grids/default.yaml` — bot UI tunables, described in
      [Using the bot](#using-the-bot) below
@@ -251,6 +252,27 @@ Seed value: `schedule_chart.default_renderer` in `configs/schedule_chart/default
 to populate the database on first run. After that, a bootstrap or DB-promoted admin switches it
 live from **🛠 Admin Panel → 🎨 Chart Style** — no redeploy needed, same pattern as **⚖️
 Regulation**.
+
+#### Historical availability (reservations are kept forever)
+
+`scheduling.jobs.run_cleanup` (the daily background job) no longer deletes `Reservation` rows —
+only long-since-consumed `WatchSubscription` rows are pruned after `scheduler.cleanup_retention_days`.
+Reservation history is kept indefinitely so an admin can always look back.
+
+**🛠 Admin Panel → 📊 Usage Report → 📅 Historical Availability** shows the same availability chart
+as 🗓 Schedule / 📅 Reserve GPU / 🔔 Watches (same admin-configured renderer — see
+[Chart renderer](#chart-renderer)), but for an admin-chosen window instead of "today through N days
+ahead":
+
+1. Pick a GPU (every server's GPUs are shown — admins aren't restricted by per-student server
+   access).
+2. Send the start date to look back from, as `YYYY-MM-DD`.
+3. Send how many days forward from that date to show.
+
+Unlike the other three screens, the chart's time-bucket width isn't the fixed
+`schedule_chart.bucket_hours` — it scales with the requested window
+(`usage_report._historical_bucket_hours`: 1h buckets for ≤2 days, up to weekly buckets for windows
+over 120 days), so a multi-month lookback doesn't render as thousands of unreadable buckets.
 
 ### Registering a student
 

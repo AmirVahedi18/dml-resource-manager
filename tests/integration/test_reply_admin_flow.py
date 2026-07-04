@@ -488,6 +488,102 @@ async def test_admin_usage_report_by_gpu_labels_include_ram(lab_setup, monkeypat
     assert all("GB" in label or "MB" in label for label in captured["labels"])
 
 
+async def test_admin_historical_availability_shows_a_reservation_from_long_ago(lab_setup):
+    """Reservations are kept forever (scheduling.jobs.run_cleanup no longer deletes them), so an
+    admin must be able to pull up the availability chart for a window from months back."""
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    far_past = utc_now() - timedelta(days=200)
+    start = floor_to_slot(far_past, 30) + timedelta(hours=1)
+    end = start + timedelta(hours=2)
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        regulation = regulation_service.get_regulation(session)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        reservation_service.create_reservation(session, user, gpu, start, end, 4096, regulation, now=far_past)
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, usage_report.MENU_BUTTON, bot)
+    state = await usage_report.start(update, context)
+    assert state == AdminUsageStates.CHOOSE_SCOPE
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, "📅 Historical Availability", bot)
+    state = await usage_report.choose_scope(update, context)
+    assert state == AdminUsageStates.CHOOSE_HISTORICAL_GPU
+
+    gpu_label = _first_choice_label(context)
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, gpu_label, bot)
+    state = await usage_report.choose_historical_gpu(update, context)
+    assert state == AdminUsageStates.TYPE_HISTORICAL_START_DATE
+
+    start_date_text = (far_past.date() - timedelta(days=1)).isoformat()
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, start_date_text, bot)
+    state = await usage_report.receive_historical_start_date(update, context)
+    assert state == AdminUsageStates.TYPE_HISTORICAL_DURATION_DAYS
+
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, "5", bot)
+    state = await usage_report.receive_historical_duration(update, context)
+    assert state == ConversationHandler.END
+
+    texts = [c.kwargs["text"] for c in bot.send_message.call_args_list]
+    assert any("historical availability" in t for t in texts)
+    assert any("<pre>" in t for t in texts)  # default renderer (unseeded) is the legacy text chart
+
+
+async def test_admin_historical_availability_rejects_bad_date_and_duration(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    await usage_report.start(make_text_update(1, ADMIN_TELEGRAM_ID, usage_report.MENU_BUTTON, bot), context)
+    await usage_report.choose_scope(
+        make_text_update(2, ADMIN_TELEGRAM_ID, "📅 Historical Availability", bot), context
+    )
+    gpu_label = _first_choice_label(context)
+    await usage_report.choose_historical_gpu(make_text_update(3, ADMIN_TELEGRAM_ID, gpu_label, bot), context)
+
+    state = await usage_report.receive_historical_start_date(
+        make_text_update(4, ADMIN_TELEGRAM_ID, "not-a-date", bot), context
+    )
+    assert state == AdminUsageStates.TYPE_HISTORICAL_START_DATE
+
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, "2026-01-01", bot)
+    state = await usage_report.receive_historical_start_date(update, context)
+    assert state == AdminUsageStates.TYPE_HISTORICAL_DURATION_DAYS
+
+    for bad in ("0", "-3", "lots"):
+        state = await usage_report.receive_historical_duration(
+            make_text_update(6, ADMIN_TELEGRAM_ID, bad, bot), context
+        )
+        assert state == AdminUsageStates.TYPE_HISTORICAL_DURATION_DAYS
+
+
+async def test_admin_historical_availability_back_and_main_menu(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    await usage_report.start(make_text_update(1, ADMIN_TELEGRAM_ID, usage_report.MENU_BUTTON, bot), context)
+    await usage_report.choose_scope(
+        make_text_update(2, ADMIN_TELEGRAM_ID, "📅 Historical Availability", bot), context
+    )
+
+    # Back on the GPU step returns to the scope screen (first screen of the sub-flow).
+    state = await usage_report.choose_historical_gpu(make_text_update(3, ADMIN_TELEGRAM_ID, BACK, bot), context)
+    assert state == AdminUsageStates.CHOOSE_SCOPE
+
+    await usage_report.choose_scope(
+        make_text_update(4, ADMIN_TELEGRAM_ID, "📅 Historical Availability", bot), context
+    )
+    gpu_label = _first_choice_label(context)
+    await usage_report.choose_historical_gpu(make_text_update(5, ADMIN_TELEGRAM_ID, gpu_label, bot), context)
+
+    # Main Menu exits instantly from the middle of the sub-flow.
+    state = await usage_report.receive_historical_start_date(
+        make_text_update(6, ADMIN_TELEGRAM_ID, MAIN_MENU, bot), context
+    )
+    assert state == ConversationHandler.END
+
+
 async def test_admin_override_cancel_flow(lab_setup):
     gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
     start = floor_to_slot(utc_now(), 30) + timedelta(hours=2)
