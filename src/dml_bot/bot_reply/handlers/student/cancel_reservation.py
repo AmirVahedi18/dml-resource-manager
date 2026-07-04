@@ -13,7 +13,7 @@ from dml_bot.bot_reply.handlers.common import (
 from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, confirm_keyboard
 from dml_bot.bot_reply.states import CancelStates
 from dml_bot.db.session import session_scope
-from dml_bot.services import reservation_service
+from dml_bot.services import regulation_service, reservation_service
 
 MENU_BUTTON = "🗂 My Reservations"
 
@@ -97,7 +97,14 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     with session_scope() as session:
         reservation = session.get(reservation_service.Reservation, context.user_data["reservation_id"])
-        reservation_service.cancel_reservation(session, reservation)
+        regulation = regulation_service.get_regulation(session)
+        try:
+            reservation_service.assert_cancellable(reservation, regulation)
+            reservation_service.cancel_reservation(session, reservation)
+        except reservation_service.ReservationError as exc:
+            await update.effective_message.reply_text(f"Could not cancel reservation: {exc}")
+            context.user_data.clear()
+            return ConversationHandler.END
 
     context.user_data.clear()
     await update.effective_message.reply_text("✅ Reservation cancelled.")

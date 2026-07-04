@@ -45,8 +45,10 @@ def make_text_update(update_id: int, telegram_id: int, text: str, bot: FakeBot) 
     return update
 
 
-def make_context(admin_ids: set[int] | None = None, config: AppConfig | None = None) -> SimpleNamespace:
+def make_context(
+    admin_ids: set[int] | None = None, config: AppConfig | None = None, args: list[str] | None = None
+) -> SimpleNamespace:
     bot_data = {"admin_ids": admin_ids or set(), "config": config or AppConfig()}
     return SimpleNamespace(
-        user_data={}, application=SimpleNamespace(bot_data=bot_data), bot_data=bot_data
+        user_data={}, application=SimpleNamespace(bot_data=bot_data), bot_data=bot_data, args=args or []
     )

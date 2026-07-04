@@ -3,23 +3,20 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from dml_bot.bot.auth import get_active_user, is_admin
 from dml_bot.bot.keyboards import admin_menu_keyboard, main_menu_keyboard
-from dml_bot.config.schema import AppConfig
 from dml_bot.db.session import session_scope
+from dml_bot.services import invite_service, user_service
 
 HELP_TEXT_LEGACY = (
     "<b>DML Resource Manager</b>\n\n"
     "Use the buttons below to reserve a GPU, check the schedule, or manage your "
     "reservations and watches. You must follow the time slots you reserve — this is "
     "lab policy.\n\n"
-    "Not registered yet? Send /myid and give that number to the lab admin."
+    "Not registered yet? Ask the lab admin for an invite code, then send /start &lt;code&gt;."
 )
 
-HELP_TEXT_WEBAPP = (
-    "<b>DML Resource Manager</b>\n\n"
-    "Tap the <b>Open App</b> button next to the message box to reserve a GPU, check the "
-    "schedule, or manage your reservations and watches. You must follow the time slots you "
-    "reserve — this is lab policy.\n\n"
-    "Not registered yet? Send /myid and give that number to the lab admin."
+NOT_REGISTERED_TEXT = (
+    "You're not registered for the DML Resource Manager yet.\n"
+    "Ask the lab admin for an invite code, then send /start <code> to register."
 )
 
 
@@ -31,23 +28,34 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    telegram_id = update.effective_user.id
     with session_scope() as session:
-        user = get_active_user(session, update.effective_user.id)
-        if user is None and not is_admin(update.effective_user.id, context):
-            await update.effective_message.reply_text(
-                "You're not registered for the DML Resource Manager yet.\n"
-                "Send /myid and give that number to the lab admin to get registered."
-            )
-            return
+        user = get_active_user(session, telegram_id)
+        if user is None and not is_admin(telegram_id, context):
+            code = context.args[0] if context.args else None
+            if code is None:
+                await update.effective_message.reply_text(NOT_REGISTERED_TEXT)
+                return
+            try:
+                invite_service.redeem_invite(session, code=code, telegram_id=telegram_id)
+            except invite_service.InviteNotFoundError:
+                await update.effective_message.reply_text(
+                    "That invite code isn't valid. Ask the lab admin for a new one."
+                )
+                return
+            except invite_service.InviteAlreadyUsedError:
+                await update.effective_message.reply_text(
+                    "That invite code has already been used. Ask the lab admin for a new one."
+                )
+                return
+            except user_service.UserAlreadyExistsError:
+                await update.effective_message.reply_text(
+                    "You already have an account (it may be deactivated) -- ask the lab admin "
+                    "to reactivate it instead of using an invite code."
+                )
+                return
+            await update.effective_message.reply_text("✅ You're now registered!")
 
-    config: AppConfig = context.bot_data["config"]
-    if config.interface == "webapp":
-        await update.effective_message.reply_text(
-            "Welcome to the DML Resource Manager.\n\n"
-            "Tap the <b>Open App</b> button next to the message box to get started.",
-            parse_mode="HTML",
-        )
-        return
     await show_main_menu(update, context, "Welcome to the DML Resource Manager.")
 
 
@@ -59,13 +67,11 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config: AppConfig = context.bot_data["config"]
-    text = HELP_TEXT_WEBAPP if config.interface == "webapp" else HELP_TEXT_LEGACY
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, parse_mode="HTML")
+        await update.callback_query.edit_message_text(HELP_TEXT_LEGACY, parse_mode="HTML")
     else:
-        await update.effective_message.reply_text(text, parse_mode="HTML")
+        await update.effective_message.reply_text(HELP_TEXT_LEGACY, parse_mode="HTML")
 
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

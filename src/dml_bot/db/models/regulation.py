@@ -19,6 +19,7 @@ class Regulation(Base):
     booking_horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
     min_reservation_slot_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     max_active_reservations_per_user: Mapped[int] = mapped_column(Integer, nullable=False)
+    min_cancellation_notice_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

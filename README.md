@@ -15,12 +15,11 @@ not by the software.
 
 - **Students** register with the admin (see [Registering a student](#registering-a-student)), then
   reserve a GPU, browse the schedule, cancel a reservation, or get notified when a busy time range
-  frees up. There are three interfaces for this — the classic inline-button chat wizards, a
-  persistent reply-keyboard menu (flat button grid docked below the message box), and a
-  **Telegram Mini App** (see [Mini App](#mini-app)) with a richer drag-to-select time grid — but
-  only one is active in a given deployment, chosen via `interface` in `configs/config.yaml` (see
-  [Choosing an interface](#choosing-an-interface)). All three call the exact same reservation
-  logic, so switching between them changes nothing about the rules.
+  frees up. There are two interfaces for this — the classic inline-button chat wizards, and a
+  persistent reply-keyboard menu (flat button grid docked below the message box) — but only one is
+  active in a given deployment, chosen via `interface` in `configs/config.yaml` (see
+  [Choosing an interface](#choosing-an-interface)). Both call the exact same reservation logic, so
+  switching between them changes nothing about the rules.
 - **Admins** (configured via `ADMIN_IDS` in `.env`) manage users, servers/GPUs, the global
   regulation (RAM/duration/booking-horizon limits), usage charts, and can override-cancel any
   reservation lab-wide — in whichever interface is active.
@@ -34,42 +33,36 @@ not by the software.
 ## Architecture
 
 ```
-main.py                  Entry point: loads .env + Hydra config, runs the bot's polling loop and
-                          the Mini App's web server concurrently on one event loop
-configs/                 Hydra configuration tree (bot, database, logging, regulation, scheduler, webapp)
+main.py                  Entry point: loads .env + Hydra config, runs the bot's polling loop
+configs/                 Hydra configuration tree (bot, database, logging, regulation, scheduler)
 src/dml_bot/
   config/                Structured (dataclass) config schema, validated by Hydra at startup
   db/                    SQLAlchemy models + session management (SQLite)
   services/               Framework-agnostic business logic (reservation conflict checking,
                            regulation, users, servers, watches, usage aggregation) — unit-tested
-                           independently of Telegram, and shared by all interfaces below
+                           independently of Telegram, and shared by both interfaces below
   bot/                   python-telegram-bot wiring: inline keyboards, conversation wizards,
                            admin/student handlers (the classic chat interface)
   bot_reply/             Same wizards, re-expressed as a persistent reply-keyboard menu (flat
                            button grid docked below the message box, no inline buttons)
-  api/                   FastAPI app powering the Mini App: initData validation (auth.py),
-                           request dependencies (deps.py), routers/ per feature area
   scheduling/            APScheduler jobs: freed-slot notifications, pre-start reminders, cleanup
   charts/                Matplotlib rendering for admin usage reports (reused by every interface)
   utils/                 Shared helpers (all datetimes are stored/compared as naive UTC, since
                            SQLite drops timezone info on round-trip)
-templates/               Jinja2 templates for the Mini App (shell.html + htmx partials/)
-static/                  Mini App static assets: bootstrap.js (Telegram SDK + htmx wiring),
-                          grid-picker.js (drag-to-select time grid), style.css
 logs/                    Rotating log files (created at runtime)
 data/                    SQLite database file (created at runtime)
 tests/
-  unit/                  Service-layer, scheduling-job, and initData-auth tests (in-memory SQLite)
-  integration/           Drives real bot handler coroutines and real FastAPI routes (real DB, only
-                           the Telegram network layer / initData signing is stubbed or simulated)
+  unit/                  Service-layer and scheduling-job tests (in-memory SQLite)
+  integration/           Drives real bot handler coroutines against a real (in-memory) DB, only
+                           the Telegram network layer is stubbed
 ```
 
 The reservation engine's core algorithm (`services/reservation_service.py`) validates slot
 alignment, duration/RAM/booking-horizon limits against the regulation, then runs a sweep-line over
 overlapping reservations on the target GPU to find peak concurrent RAM usage, rejecting the
 request if it would exceed the GPU's total RAM at any point in the requested window. Every
-interface's reservation wizard/grid picker calls this exact same function, so there is exactly one
-place reservation rules are enforced.
+interface's reservation wizard calls this exact same function, so there is exactly one place
+reservation rules are enforced.
 
 ## Setup
 
@@ -97,7 +90,6 @@ place reservation rules are enforced.
    | `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather)                  |
    | `ADMIN_IDS`          | Comma-separated Telegram numeric IDs of lab admins                    |
    | `TZ`                 | IANA timezone used to display times to users (e.g. `Asia/Tehran`)     |
-   | `WEBAPP_PUBLIC_URL`  | HTTPS URL the Mini App is reachable at; required only when `interface: webapp` (see [Mini App](#mini-app)) |
 
 3. **Review tunables** in `configs/` (all non-secret, all overridable on the command line via
    Hydra, e.g. `python main.py regulation.booking_horizon_days=60`):
@@ -111,8 +103,6 @@ place reservation rules are enforced.
      populate the database on first run; after that, admins edit it live via the bot)
    - `configs/scheduler/default.yaml` — background job poll interval, reminder lead time, cleanup
      retention window
-   - `configs/webapp/default.yaml` — host/port the Mini App's web server binds to (only used when
-     `interface: webapp`)
 
 4. **Run the bot:**
 
@@ -130,32 +120,23 @@ place reservation rules are enforced.
 Exactly one runs at a time — not both, and not neither:
 
 ```yaml
-interface: webapp   # or: legacy, or: reply_keyboard
+interface: reply_keyboard   # or: legacy
 ```
 
-- **`webapp`** (default) — starts the Mini App's FastAPI server on
-  `configs/webapp/default.yaml`'s host/port and registers it as the persistent Mini App menu
-  button next to the message input. Requires `WEBAPP_PUBLIC_URL` to be set in `.env` (see
-  [Mini App](#mini-app)) — startup fails fast with a clear error if it isn't. Neither of the other
-  two interfaces is registered in this mode; `/start` and `/help` point users at the Mini App
-  instead.
-- **`legacy`** — runs only the classic chat-based wizards (inline-button menus for reserving,
-  browsing the schedule, cancelling, watches, and the admin panel). The Mini App's web server is
-  never started, `WEBAPP_PUBLIC_URL` is not required, and the menu button is reset to Telegram's
-  default (removed) on startup.
-- **`reply_keyboard`** — the same features (student + full admin panel), but as a persistent
-  reply keyboard (`src/dml_bot/bot_reply/`): a flat grid of buttons docked below the message box,
-  rather than buttons attached to individual messages. Every list-selection screen (GPUs, dates,
-  reservations, users, ...) that could exceed one screen is paginated with ◀ Prev / ▶ Next
-  controls. Reservation duration and RAM, and a watch's minimum-RAM threshold, are all entered as
-  typed whole numbers (validated against the regulation's limits / the GPU's free or total RAM)
+- **`legacy`** — runs the classic chat-based wizards (inline-button menus for reserving, browsing
+  the schedule, cancelling, watches, and the admin panel).
+- **`reply_keyboard`** (default) — the same features (student + full admin panel), but as a
+  persistent reply keyboard (`src/dml_bot/bot_reply/`): a flat grid of buttons docked below the
+  message box, rather than buttons attached to individual messages. Every list-selection screen
+  (GPUs, dates, reservations, users, ...) that could exceed one screen is paginated with ◀ Prev / ▶
+  Next controls. Reservation duration and RAM, and a watch's minimum-RAM threshold, are all entered
+  as typed whole numbers (validated against the regulation's limits / the GPU's free or total RAM)
   rather than picking from preset buttons, since an arbitrary integer has no natural bounded button
   set. The RAM unit students type in (whole GB by default, or MB) is configurable via
   `ram_input.unit` in `configs/ram_input/default.yaml` — stored/validated values are always MB
   regardless of the configured input unit. Every other typed input is genuinely free-form data with
-  no bounded set of choices (a new user's Telegram ID and name, a new server/GPU's name, a
-  regulation field's new value), exactly as in `legacy`. Same startup requirements as `legacy` (no
-  `WEBAPP_PUBLIC_URL`, menu button reset to default).
+  no bounded set of choices (a new user's full name, a new server/GPU's name, a regulation field's
+  new value), exactly as in `legacy`.
 
   Right after Step 1/5 (choosing a GPU) in **Reserve GPU**, the bot automatically sends that GPU's
   RAM-occupancy chart (the same renderer as 🗓 Schedule) for today through `bot.date_picker_days_visible`
@@ -211,8 +192,8 @@ interface: webapp   # or: legacy, or: reply_keyboard
     🔐 Server Access**, a checklist of every server toggled on/off, applied on **✅ Done**.
   - A student with no granted servers sees "You don't have access to any servers yet" instead of a
     GPU list when they try to reserve, watch, or view a schedule.
-  - This restriction currently applies only to the `reply_keyboard` interface — the `legacy` and
-    `webapp` interfaces are unaffected and still list every server's GPUs to every registered user.
+  - This restriction currently applies only to the `reply_keyboard` interface — the `legacy`
+    interface is unaffected and still lists every server's GPUs to every registered user.
 
   **Button grid layout**: most paginated list screens show one button per row with ◀ Prev / ▶ Next
   controls once the list overflows a page, same as always. Four screens instead lay their page out
@@ -255,58 +236,18 @@ You can also override it from the command line without editing the file:
 
 ### Registering a student
 
-The bot does not connect to any lab directory service, so registration is manual:
+The bot does not connect to any lab directory service. Registration is self-service via a one-time
+invite code, so the admin never needs to look up the student's Telegram ID:
 
-1. The student sends `/myid` to the bot, which replies with their numeric Telegram ID.
-2. The student gives that ID (and their name) to the lab admin.
-3. The admin opens **🛠 Admin Panel → 👤 Manage Users → ➕ Add User**, enters the ID and name, then
-   (on the `reply_keyboard` interface) picks which server(s) the student may use — at least one is
-   required to finish adding them.
+1. The admin opens **🛠 Admin Panel → 👤 Manage Users → ➕ Add User**, types the student's full name,
+   then (on the `reply_keyboard` interface) picks which server(s) they may use — at least one is
+   required to finish. The bot replies with a one-time invite code.
+2. The admin sends that code to the student (by any channel — chat, email, in person).
+3. The student sends `/start <code>` to the bot, which links their Telegram ID to the pre-filled
+   registration and consumes the code.
 
-The student can now use `/start` to access the full menu.
-
-## Mini App
-
-The Mini App is a richer web UI to the exact same features, active when `interface: webapp` (see
-[Choosing an interface](#choosing-an-interface)) — reached via a persistent button next to the
-message input in the chat, opening a web page inside Telegram. It calls the same `services/` layer
-as the classic bot, so switching `interface` back to `legacy` changes nothing about the reservation
-rules, only which UI is exposed.
-
-### Why it needs an HTTPS URL
-
-Telegram requires a Mini App to be served over a real HTTPS URL with a valid (CA-signed)
-certificate — it will not open a self-signed or plain-HTTP address. Until your lab server has a
-real domain and TLS set up, the simplest path is a tunnel:
-
-1. Run the bot locally (`python main.py`) — the Mini App is served on
-   `configs/webapp/default.yaml`'s port (default `8080`).
-2. Point a tunnel at that port to get a temporary public HTTPS URL, e.g. with
-   [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/):
-   `cloudflared tunnel --url http://localhost:8080`. ngrok works the same way if you already use it.
-3. Put that HTTPS URL in `.env` as `WEBAPP_PUBLIC_URL`, set `interface: webapp` in
-   `configs/config.yaml`, and restart the bot — it registers the Mini App's menu button
-   automatically on startup.
-
-Once the lab has a real domain with a certificate (e.g. via nginx/Caddy + Let's Encrypt), just
-point `WEBAPP_PUBLIC_URL` at that instead — nothing else changes.
-
-### How auth works
-
-There's no separate login: Telegram signs a per-launch `initData` string identifying the user,
-which the Mini App's JavaScript sends as a header (`X-Telegram-Init-Data`) on every request. The
-backend (`src/dml_bot/api/auth.py`) verifies that signature with HMAC-SHA256 against the bot
-token on every single request — the same trust model as the classic bot, just over HTTP instead
-of Telegram's Update objects. There is no server-side session or cookie.
-
-### Testing the Mini App locally without Telegram
-
-Since it's just a FastAPI app, you can open `http://localhost:8080/` directly in a browser for
-layout/styling checks, but the page will be stuck on "Loading…" — without Telegram's JS SDK
-providing real `initData`, every `/api/*` call is correctly rejected with 401. Full testing needs
-either the automated test suite (`pytest tests/integration/test_webapp_*.py`, which simulates
-valid signed `initData`) or opening the real Mini App inside Telegram once `WEBAPP_PUBLIC_URL` is
-set.
+A pending (not yet redeemed) invite is listed alongside registered students in **Manage Users**,
+with a 🗑 to revoke it if it was mistyped or is no longer needed.
 
 ## Testing
 
@@ -323,19 +264,21 @@ keyboard/callback-data (or button-label) parsing — only the network-facing `Bo
 (`send_message`, `edit_message_text`, `send_photo`, `answer_callback_query`) are replaced with
 recording mocks.
 
-Integration tests for the Mini App (`tests/integration/test_webapp_*.py`) drive FastAPI's
-`TestClient` against real routes with a real (in-memory) DB; `tests/webapp_signing.py` builds
-genuinely HMAC-signed `initData` so these tests exercise the real auth path end-to-end rather than
-bypassing it. No browser automation — the frontend's JS (grid drag-selection) isn't covered by
-the automated suite, only manually in real Telegram.
-
 ## Project conventions
 
 - All datetimes are stored and compared as **naive UTC** throughout the codebase (see
   `src/dml_bot/utils/time_utils.py`); conversion to/from the configured display timezone happens
-  only at the presentation layer (both the bot's message formatting and the Mini App's templates).
+  only at the presentation layer.
 - Reservations use a configurable fixed time-slot grid (`regulation.min_reservation_slot_minutes`)
   so free/busy calculations and calendar rendering stay simple, in both interfaces.
-- The classic bot and the Mini App never duplicate business logic: both call the same functions
-  in `services/`, so a rule change (e.g. a new regulation field) only needs to be enforced once.
+- `regulation.min_cancellation_notice_minutes` (default `0`, i.e. disabled) sets how much advance
+  notice a student must give to self-cancel a reservation; cancelling inside that window is
+  rejected with an explanation, in both interfaces (`reservation_service.assert_cancellable`).
+  Admin-initiated cancellations (single, per-user bulk, lab-wide bulk, and override) always bypass
+  this check by design — the cutoff only discourages last-minute student flaking, it isn't a lock
+  admins need to work around. `0` is a valid value for this field alone (every other regulation
+  field requires a positive whole number), since it's the natural way to turn the cutoff off
+  entirely.
+- The two interfaces never duplicate business logic: both call the same functions in `services/`,
+  so a rule change (e.g. a new regulation field) only needs to be enforced once.
 - See `TODO.md` for design alternatives that were considered but deferred for a later version.

@@ -6,7 +6,7 @@ from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, NEXT_PAGE, PRE
 from dml_bot.bot_reply.states import CancelStates, ReserveStates
 from dml_bot.db.models.server import Server
 from dml_bot.db.session import session_scope
-from dml_bot.services import reservation_service, server_access_service, server_service, user_service
+from dml_bot.services import regulation_service, reservation_service, server_access_service, server_service, user_service
 from tests.integration.telegram_helpers import FakeBot, make_context, make_text_update
 
 
@@ -180,6 +180,45 @@ async def test_cancel_reservation_flow(lab_setup):
         user = user_service.get_user_by_telegram_id(session, telegram_id)
         reservations = reservation_service.list_active_reservations_for_user(session, user.id)
     assert reservations == []
+
+
+async def test_cancel_blocked_within_configured_notice_cutoff(lab_setup):
+    telegram_id = lab_setup["telegram_id"]
+    bot = FakeBot()
+    context = make_context()
+
+    await reserve_handlers.start(make_text_update(1, telegram_id, reserve_handlers.MENU_BUTTON, bot), context)
+    gpu_label = _first_choice_label(context)
+    await reserve_handlers.choose_gpu(make_text_update(2, telegram_id, gpu_label, bot), context)
+    date_label = _first_choice_label(context)
+    await reserve_handlers.choose_date(make_text_update(3, telegram_id, date_label, bot), context)
+    time_label = _first_choice_label(context)
+    await reserve_handlers.choose_start_time(make_text_update(4, telegram_id, time_label, bot), context)
+    await reserve_handlers.choose_duration(make_text_update(5, telegram_id, "2", bot), context)
+    await reserve_handlers.choose_ram(make_text_update(6, telegram_id, "4", bot), context)
+    await reserve_handlers.confirm(make_text_update(7, telegram_id, CONFIRM, bot), context)
+
+    # An enormous notice requirement guarantees the freshly booked slot falls inside the cutoff,
+    # regardless of which date/time the picker happened to offer first.
+    with session_scope() as session:
+        regulation_service.update_regulation(session, updated_by=1, min_cancellation_notice_minutes=10**8)
+
+    update = make_text_update(8, telegram_id, cancel_handlers.MENU_BUTTON, bot)
+    await cancel_handlers.start(update, context)
+    reservation_label = _first_choice_label(context)
+    await cancel_handlers.choose_reservation(make_text_update(9, telegram_id, reservation_label, bot), context)
+
+    update = make_text_update(10, telegram_id, CONFIRM, bot)
+    state = await cancel_handlers.confirm(update, context)
+    assert state == ConversationHandler.END
+
+    text = bot.send_message.call_args.kwargs["text"]
+    assert "Could not cancel reservation" in text
+
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        reservations = reservation_service.list_active_reservations_for_user(session, user.id)
+    assert len(reservations) == 1  # still active -- cancellation was rejected, not applied
 
 
 async def test_cancel_reservation_list_label_and_confirm_screen_show_end_time_and_ram(lab_setup):

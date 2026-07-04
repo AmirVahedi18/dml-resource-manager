@@ -1,9 +1,0 @@
-{% include "partials/_home_button.html" %}
-<div class="card">
-  <p><strong>{{ server.name }} GPU{{ gpu.index_on_server }}</strong></p>
-  <form hx-post="/api/watches/new/{{ server.id }}/{{ gpu.id }}/{{ range_key }}" hx-target="#content">
-    <label for="min_ram_needed_mb">Minimum RAM (MB) needed to notify you</label>
-    <input type="number" name="min_ram_needed_mb" id="min_ram_needed_mb" min="1" value="1024" required>
-    <button type="submit">🔔 Create Watch</button>
-  </form>
-</div>

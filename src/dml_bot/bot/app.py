@@ -21,11 +21,9 @@ from dml_bot.config.schema import AppConfig
 
 
 def build_application(token: str, admin_ids: set[int], config: AppConfig) -> Application:
-    """Registers `/start`, `/help`, `/myid` always (identity/registration works the same in either
-    mode); the full classic conversational menu is only registered when `config.interface ==
-    "legacy"` -- in "webapp" mode all reservation/admin features live in the Mini App instead, so
-    wiring up the classic wizards too would just give users two divergent ways to do the same
-    thing."""
+    """Registers `/start`, `/help`, `/myid` always; the full classic conversational menu is only
+    registered when `config.interface == "legacy"` (the only other value is "reply_keyboard",
+    which uses `dml_bot.bot_reply.app.build_reply_application` instead)."""
     application = Application.builder().token(token).build()
     application.bot_data["admin_ids"] = admin_ids
     application.bot_data["config"] = config

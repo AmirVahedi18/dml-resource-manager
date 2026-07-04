@@ -11,20 +11,31 @@ from dml_bot.bot.auth import require_admin
 from dml_bot.bot.handlers.common import cancel_wizard_callback, show_main_menu
 from dml_bot.bot.keyboards import CANCEL_BUTTON, cancel_only_keyboard
 from dml_bot.bot.states import AdminUserStates
+from dml_bot.db.models.invite_code import InviteCode
 from dml_bot.db.models.user import User
 from dml_bot.db.session import session_scope
-from dml_bot.services import user_service
+from dml_bot.services import invite_service, user_service
 
 
 def _render_list(session) -> tuple[str, InlineKeyboardMarkup]:
     users = user_service.list_users(session, active_only=False)
+    invites = invite_service.list_pending_invites(session)
     rows = []
     for u in users:
         flags = ("✅" if u.is_active else "🚫") + (" ⭐" if u.can_use_multiple_gpus else "")
         rows.append([InlineKeyboardButton(f"{u.full_name} {flags}", callback_data=f"adminusers:select:{u.id}")])
+    for inv in invites:
+        rows.append(
+            [InlineKeyboardButton(
+                f"📨 {inv.full_name} ({inv.code}) 🗑", callback_data=f"adminusers:revokeinvite:{inv.id}"
+            )]
+        )
     rows.append([InlineKeyboardButton("➕ Add User", callback_data="adminusers:add")])
     rows.append([CANCEL_BUTTON])
-    text = "Registered users (✅ active, 🚫 inactive, ⭐ privileged):" if users else "No users registered yet."
+    if users or invites:
+        text = "Registered users (✅ active, 🚫 inactive, ⭐ privileged); 📨 = pending invite, tap to revoke:"
+    else:
+        text = "No users registered yet."
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -90,29 +101,12 @@ async def toggle_privilege(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return AdminUserStates.MENU
 
 
-async def ask_telegram_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def ask_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.callback_query.answer()
     await update.callback_query.edit_message_text(
-        "Send the new student's Telegram numeric ID (ask them to send /myid to this bot):",
+        "Send the new student's full name:",
         reply_markup=cancel_only_keyboard(),
     )
-    return AdminUserStates.ADD_TELEGRAM_ID
-
-
-async def receive_telegram_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        telegram_id = int(update.message.text.strip())
-    except ValueError:
-        await update.message.reply_text("Please send a numeric Telegram ID.")
-        return AdminUserStates.ADD_TELEGRAM_ID
-
-    with session_scope() as session:
-        if user_service.get_user_by_telegram_id(session, telegram_id) is not None:
-            await update.message.reply_text("A user with that Telegram ID is already registered.")
-            return AdminUserStates.ADD_TELEGRAM_ID
-
-    context.user_data["new_telegram_id"] = telegram_id
-    await update.message.reply_text("Now send their full name:")
     return AdminUserStates.ADD_FULL_NAME
 
 
@@ -122,14 +116,31 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Please send a non-empty name.")
         return AdminUserStates.ADD_FULL_NAME
 
-    telegram_id = context.user_data["new_telegram_id"]
     with session_scope() as session:
-        user_service.register_user(session, telegram_id=telegram_id, full_name=full_name)
+        invite = invite_service.create_invite(session, full_name=full_name)
+        code = invite.code
 
     context.user_data.clear()
-    await update.message.reply_text(f"✅ Registered {full_name} (Telegram ID {telegram_id}).")
+    await update.message.reply_text(
+        f"✅ Invite created for {full_name}. Give them this code and ask them to send:\n\n"
+        f"<code>/start {code}</code>\n\n"
+        "to this bot to finish registering.",
+        parse_mode="HTML",
+    )
     await show_main_menu(update, context)
     return ConversationHandler.END
+
+
+async def revoke_invite(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.callback_query.answer()
+    invite_id = int(update.callback_query.data.split(":")[2])
+    with session_scope() as session:
+        invite = session.get(InviteCode, invite_id)
+        if invite is not None:
+            invite_service.revoke_invite(session, invite)
+        text, markup = _render_list(session)
+    await update.callback_query.edit_message_text(text, reply_markup=markup)
+    return AdminUserStates.MENU
 
 
 def users_conversation() -> ConversationHandler:
@@ -137,13 +148,11 @@ def users_conversation() -> ConversationHandler:
         entry_points=[CallbackQueryHandler(start, pattern="^admin:users$")],
         states={
             AdminUserStates.MENU: [
-                CallbackQueryHandler(ask_telegram_id, pattern="^adminusers:add$"),
+                CallbackQueryHandler(ask_full_name, pattern="^adminusers:add$"),
                 CallbackQueryHandler(select_user, pattern=r"^adminusers:select:\d+$"),
                 CallbackQueryHandler(toggle_active, pattern=r"^adminusers:toggleactive:\d+$"),
                 CallbackQueryHandler(toggle_privilege, pattern=r"^adminusers:togglepriv:\d+$"),
-            ],
-            AdminUserStates.ADD_TELEGRAM_ID: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_telegram_id)
+                CallbackQueryHandler(revoke_invite, pattern=r"^adminusers:revokeinvite:\d+$"),
             ],
             AdminUserStates.ADD_FULL_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_full_name)

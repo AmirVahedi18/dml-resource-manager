@@ -34,7 +34,6 @@ class WatchFlowStates(IntEnum):
 
 class AdminUserStates(IntEnum):
     MENU = auto()
-    ADD_TELEGRAM_ID = auto()
     ADD_FULL_NAME = auto()
     ADD_SERVER_ACCESS = auto()
     RENAME = auto()

@@ -10,15 +10,16 @@ from dml_bot.bot.states import (
     AdminUsageStates,
     AdminUserStates,
 )
+from dml_bot.bot.handlers import common
 from dml_bot.db.session import session_scope
-from dml_bot.services import regulation_service, reservation_service, server_service, user_service
+from dml_bot.services import invite_service, regulation_service, reservation_service, server_service, user_service
 from dml_bot.utils.time_utils import floor_to_slot, utc_now
 from tests.integration.telegram_helpers import FakeBot, make_callback_update, make_context, make_text_update
 
 ADMIN_TELEGRAM_ID = 999
 
 
-async def test_admin_add_user_flow(lab_setup):
+async def test_admin_add_user_flow_creates_invite(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
 
@@ -27,21 +28,64 @@ async def test_admin_add_user_flow(lab_setup):
     assert state == AdminUserStates.MENU
 
     update = make_callback_update(2, ADMIN_TELEGRAM_ID, "adminusers:add", bot)
-    state = await manage_users.ask_telegram_id(update, context)
-    assert state == AdminUserStates.ADD_TELEGRAM_ID
-
-    update = make_text_update(3, ADMIN_TELEGRAM_ID, "424242", bot)
-    state = await manage_users.receive_telegram_id(update, context)
+    state = await manage_users.ask_full_name(update, context)
     assert state == AdminUserStates.ADD_FULL_NAME
 
-    update = make_text_update(4, ADMIN_TELEGRAM_ID, "Charlie", bot)
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, "Charlie", bot)
     state = await manage_users.receive_full_name(update, context)
     assert state == ConversationHandler.END
 
     with session_scope() as session:
+        invites = invite_service.list_pending_invites(session)
+    assert len(invites) == 1
+    assert invites[0].full_name == "Charlie"
+
+
+async def test_student_redeems_invite_via_start_command(lab_setup):
+    with session_scope() as session:
+        invite = invite_service.create_invite(session, full_name="Charlie")
+        code = invite.code
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID}, args=[code])
+    update = make_text_update(1, 424242, f"/start {code}", bot)
+
+    await common.start_command(update, context)
+
+    with session_scope() as session:
         new_user = user_service.get_user_by_telegram_id(session, 424242)
-    assert new_user is not None
-    assert new_user.full_name == "Charlie"
+        assert new_user is not None
+        assert new_user.full_name == "Charlie"
+        assert invite_service.list_pending_invites(session) == []
+
+
+async def test_redeeming_unknown_code_does_not_register(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID}, args=["BADCODE1"])
+    update = make_text_update(1, 424242, "/start BADCODE1", bot)
+
+    await common.start_command(update, context)
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, 424242) is None
+    assert "isn't valid" in bot.send_message.call_args.kwargs["text"]
+
+
+async def test_redeeming_used_code_does_not_register_a_second_user(lab_setup):
+    with session_scope() as session:
+        invite = invite_service.create_invite(session, full_name="Charlie")
+        code = invite.code
+        invite_service.redeem_invite(session, code=code, telegram_id=424242)
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID}, args=[code])
+    update = make_text_update(1, 111333, f"/start {code}", bot)
+
+    await common.start_command(update, context)
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, 111333) is None
+    assert "already been used" in bot.send_message.call_args.kwargs["text"]
 
 
 async def test_non_admin_is_rejected(lab_setup):

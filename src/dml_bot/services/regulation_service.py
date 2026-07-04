@@ -18,6 +18,7 @@ def ensure_seeded(session: Session, seed: RegulationConfig) -> Regulation:
         booking_horizon_days=seed.booking_horizon_days,
         min_reservation_slot_minutes=seed.min_reservation_slot_minutes,
         max_active_reservations_per_user=seed.max_active_reservations_per_user,
+        min_cancellation_notice_minutes=seed.min_cancellation_notice_minutes,
     )
     session.add(regulation)
     session.flush()

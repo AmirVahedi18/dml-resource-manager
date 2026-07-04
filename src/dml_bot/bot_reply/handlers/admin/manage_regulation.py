@@ -17,7 +17,12 @@ FIELD_LABELS = {
     "booking_horizon_days": "Booking horizon (days ahead)",
     "min_reservation_slot_minutes": "Time slot size (minutes)",
     "max_active_reservations_per_user": "Max active reservations per user",
+    "min_cancellation_notice_minutes": "Min. notice to self-cancel (minutes, 0 = no limit)",
 }
+
+# Fields where 0 is a meaningful value (e.g. "no cutoff") rather than nonsensical; every other
+# field must be a positive whole number.
+ZERO_ALLOWED_FIELDS = {"min_cancellation_notice_minutes"}
 
 
 async def _render_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -63,12 +68,14 @@ async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return await _render_menu(update, context)
 
     field = context.user_data["field"]
+    min_allowed = 0 if field in ZERO_ALLOWED_FIELDS else 1
     try:
         value = int(text)
-        if value <= 0:
+        if value < min_allowed:
             raise ValueError
     except ValueError:
-        await update.effective_message.reply_text("Please send a positive whole number.")
+        prompt = "Please send a whole number ≥ 0." if min_allowed == 0 else "Please send a positive whole number."
+        await update.effective_message.reply_text(prompt)
         return AdminRegulationStates.EDIT_VALUE
 
     with session_scope() as session:

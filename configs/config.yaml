@@ -5,7 +5,6 @@ defaults:
   - logging: default
   - regulation: default
   - scheduler: default
-  - webapp: default
   - schedule_chart: default
   - ram_input: default
   - list_grids: default
@@ -13,7 +12,7 @@ defaults:
   - override hydra/hydra_logging: disabled
   - _self_
 
-interface: reply_keyboard  # "webapp", "legacy" (classic inline menu), or "reply_keyboard"
+interface: reply_keyboard  # "legacy" (classic inline menu) or "reply_keyboard"
 
 hydra:
   job:

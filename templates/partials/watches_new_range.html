@@ -1,9 +1,0 @@
-{% include "partials/_home_button.html" %}
-<div class="card">
-  <p><strong>{{ server.name }} GPU{{ gpu.index_on_server }} — watch which range?</strong></p>
-  {% for key, label in range_labels.items() %}
-  <a class="btn" hx-get="/api/watches/new/{{ server.id }}/{{ gpu.id }}/{{ key }}" hx-target="#content">
-    {{ label }}
-  </a>
-  {% endfor %}
-</div>

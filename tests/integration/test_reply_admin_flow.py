@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from telegram.ext import ConversationHandler
 
+from dml_bot.bot_reply.handlers import common as bot_reply_common
 from dml_bot.bot_reply.handlers.admin import (
     manage_regulation,
     manage_servers,
@@ -18,9 +19,11 @@ from dml_bot.bot_reply.states import (
     AdminUserStates,
 )
 from dml_bot.db.models.gpu import GPU
+from dml_bot.db.models.invite_code import InviteCode
 from dml_bot.db.models.server import Server
 from dml_bot.db.session import session_scope
 from dml_bot.services import (
+    invite_service,
     regulation_service,
     reservation_service,
     server_access_service,
@@ -37,7 +40,7 @@ def _first_choice_label(context) -> str:
     return next(iter(context.user_data["_choices"]))
 
 
-async def test_admin_add_user_flow(lab_setup):
+async def test_admin_add_user_flow_creates_invite(lab_setup):
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
 
@@ -47,31 +50,27 @@ async def test_admin_add_user_flow(lab_setup):
 
     update = make_text_update(2, ADMIN_TELEGRAM_ID, manage_users.ADD_USER, bot)
     state = await manage_users.menu_choice(update, context)
-    assert state == AdminUserStates.ADD_TELEGRAM_ID
-
-    update = make_text_update(3, ADMIN_TELEGRAM_ID, "424242", bot)
-    state = await manage_users.receive_telegram_id(update, context)
     assert state == AdminUserStates.ADD_FULL_NAME
 
-    update = make_text_update(4, ADMIN_TELEGRAM_ID, "Charlie", bot)
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, "Charlie", bot)
     state = await manage_users.receive_full_name(update, context)
     assert state == AdminUserStates.ADD_SERVER_ACCESS
 
     server_label = _first_choice_label(context)
-    update = make_text_update(5, ADMIN_TELEGRAM_ID, server_label, bot)
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, server_label, bot)
     state = await manage_users.choose_new_user_access(update, context)
     assert state == AdminUserStates.ADD_SERVER_ACCESS  # toggled on, screen re-rendered
 
-    update = make_text_update(6, ADMIN_TELEGRAM_ID, DONE, bot)
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, DONE, bot)
     state = await manage_users.choose_new_user_access(update, context)
     assert state == ConversationHandler.END
 
     with session_scope() as session:
-        new_user = user_service.get_user_by_telegram_id(session, 424242)
-        access_ids = server_access_service.list_accessible_server_ids(session, new_user.id)
-    assert new_user is not None
-    assert new_user.full_name == "Charlie"
-    assert access_ids == {lab_setup["server_id"]}
+        invites = invite_service.list_pending_invites(session)
+        assert len(invites) == 1
+        assert invites[0].full_name == "Charlie"
+        server_ids = {int(x) for x in invites[0].server_ids.split(",") if x}
+    assert server_ids == {lab_setup["server_id"]}
 
 
 async def test_add_user_requires_at_least_one_server(lab_setup):
@@ -80,16 +79,52 @@ async def test_add_user_requires_at_least_one_server(lab_setup):
 
     await manage_users.start(make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot), context)
     await manage_users.menu_choice(make_text_update(2, ADMIN_TELEGRAM_ID, manage_users.ADD_USER, bot), context)
-    await manage_users.receive_telegram_id(make_text_update(3, ADMIN_TELEGRAM_ID, "111222", bot), context)
-    state = await manage_users.receive_full_name(make_text_update(4, ADMIN_TELEGRAM_ID, "Dana", bot), context)
+    state = await manage_users.receive_full_name(make_text_update(3, ADMIN_TELEGRAM_ID, "Dana", bot), context)
     assert state == AdminUserStates.ADD_SERVER_ACCESS
 
     # Tapping Done with nothing selected is rejected -- at least one server is required.
-    state = await manage_users.choose_new_user_access(make_text_update(5, ADMIN_TELEGRAM_ID, DONE, bot), context)
+    state = await manage_users.choose_new_user_access(make_text_update(4, ADMIN_TELEGRAM_ID, DONE, bot), context)
     assert state == AdminUserStates.ADD_SERVER_ACCESS
 
     with session_scope() as session:
-        assert user_service.get_user_by_telegram_id(session, 111222) is None
+        assert invite_service.list_pending_invites(session) == []
+
+
+async def test_student_redeems_invite_and_gets_server_access(lab_setup):
+    with session_scope() as session:
+        invite = invite_service.create_invite(session, full_name="Charlie", server_ids={lab_setup["server_id"]})
+        code = invite.code
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID}, args=[code])
+    update = make_text_update(1, 424242, f"/start {code}", bot)
+
+    await bot_reply_common.start_command(update, context)
+
+    with session_scope() as session:
+        new_user = user_service.get_user_by_telegram_id(session, 424242)
+        assert new_user is not None
+        assert new_user.full_name == "Charlie"
+        assert server_access_service.list_accessible_server_ids(session, new_user.id) == {lab_setup["server_id"]}
+        assert invite_service.list_pending_invites(session) == []
+
+
+async def test_admin_revokes_pending_invite(lab_setup):
+    with session_scope() as session:
+        invite = invite_service.create_invite(session, full_name="Charlie")
+        invite_id = invite.id
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+    await manage_users.start(make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot), context)
+
+    invite_label = next(l for l in context.user_data["_choices"] if "📨" in l)
+    state = await manage_users.menu_choice(make_text_update(2, ADMIN_TELEGRAM_ID, invite_label, bot), context)
+    assert state == AdminUserStates.MENU
+
+    with session_scope() as session:
+        assert invite_service.list_pending_invites(session) == []
+        assert session.get(InviteCode, invite_id) is None
 
 
 async def test_admin_grants_and_revokes_server_access(lab_setup):
@@ -287,6 +322,48 @@ async def test_admin_update_regulation_flow(lab_setup):
     assert regulation.updated_by == ADMIN_TELEGRAM_ID
 
 
+async def test_admin_can_set_cancellation_notice_cutoff_including_zero(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, manage_regulation.MENU_BUTTON, bot)
+    await manage_regulation.start(update, context)
+
+    field_label = next(
+        label
+        for label, val in context.user_data["_choices"].items()
+        if val == "min_cancellation_notice_minutes"
+    )
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, field_label, bot)
+    state = await manage_regulation.choose_field(update, context)
+    assert state == AdminRegulationStates.EDIT_VALUE
+
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, "120", bot)
+    state = await manage_regulation.receive_value(update, context)
+    assert state == ConversationHandler.END
+    with session_scope() as session:
+        regulation = regulation_service.get_regulation(session)
+    assert regulation.min_cancellation_notice_minutes == 120
+
+    # 0 is a valid value for this field specifically (disables the cutoff) -- unlike every other
+    # regulation field, which requires a strictly positive number.
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, manage_regulation.MENU_BUTTON, bot)
+    await manage_regulation.start(update, context)
+    field_label = next(
+        label
+        for label, val in context.user_data["_choices"].items()
+        if val == "min_cancellation_notice_minutes"
+    )
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, field_label, bot)
+    await manage_regulation.choose_field(update, context)
+    update = make_text_update(6, ADMIN_TELEGRAM_ID, "0", bot)
+    state = await manage_regulation.receive_value(update, context)
+    assert state == ConversationHandler.END
+    with session_scope() as session:
+        regulation = regulation_service.get_regulation(session)
+    assert regulation.min_cancellation_notice_minutes == 0
+
+
 async def test_admin_usage_report_renders_chart(lab_setup):
     gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
     creation_now = floor_to_slot(utc_now(), 30) - timedelta(days=2)
@@ -394,6 +471,44 @@ async def test_admin_override_cancel_flow(lab_setup):
     notify_calls = [c for c in bot.send_message.call_args_list if c.kwargs.get("chat_id") == telegram_id]
     assert len(notify_calls) == 1
     assert "cancelled by an admin" in notify_calls[0].kwargs["text"]
+
+
+async def test_admin_cancel_bypasses_student_notice_cutoff(lab_setup):
+    """Admin cancellations must always be allowed, even when the reservation falls inside the
+    student self-cancellation notice cutoff -- the cutoff only restricts student-initiated
+    cancellations, not admin overrides."""
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    start = floor_to_slot(utc_now(), 30) + timedelta(hours=2)
+    end = start + timedelta(hours=2)
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        regulation = regulation_service.get_regulation(session)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        reservation = reservation_service.create_reservation(session, user, gpu, start, end, 4096, regulation)
+        reservation_id = reservation.id
+        regulation_service.update_regulation(session, updated_by=1, min_cancellation_notice_minutes=10**8)
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, reservations_admin.MENU_BUTTON, bot)
+    await reservations_admin.start(update, context)
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, reservations_admin.SCOPE_ALL, bot)
+    await reservations_admin.choose_scope(update, context)
+
+    reservation_label = _first_choice_label(context)
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, reservation_label, bot)
+    await reservations_admin.choose_reservation(update, context)
+
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, CONFIRM, bot)
+    state = await reservations_admin.confirm_cancel(update, context)
+    assert state == ConversationHandler.END
+
+    with session_scope() as session:
+        from dml_bot.db.models.reservation import Reservation, ReservationStatus
+
+        cancelled = session.get(Reservation, reservation_id)
+    assert cancelled.status == ReservationStatus.CANCELLED
 
 
 async def test_admin_reservations_by_user_scope_bulk_cancels_for_that_user(lab_setup):

@@ -142,6 +142,36 @@ def test_cancel_already_cancelled_raises(setup):
         rs.cancel_reservation(session, reservation, now=NOW)
 
 
+def test_assert_cancellable_allows_anytime_before_start_when_cutoff_disabled(setup):
+    session, gpu, regulation, user = setup
+    assert regulation.min_cancellation_notice_minutes == 0
+    reservation = rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    rs.assert_cancellable(reservation, regulation, now=START - timedelta(minutes=1))
+
+
+def test_assert_cancellable_rejects_within_cutoff_window(setup):
+    session, gpu, regulation, user = setup
+    regulation.min_cancellation_notice_minutes = 120
+    reservation = rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    with pytest.raises(rs.CancellationCutoffError):
+        rs.assert_cancellable(reservation, regulation, now=START - timedelta(minutes=30))
+
+
+def test_assert_cancellable_allows_outside_cutoff_window(setup):
+    session, gpu, regulation, user = setup
+    regulation.min_cancellation_notice_minutes = 120
+    reservation = rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    rs.assert_cancellable(reservation, regulation, now=START - timedelta(hours=3))
+
+
+def test_assert_cancellable_rejects_after_start(setup):
+    session, gpu, regulation, user = setup
+    regulation.min_cancellation_notice_minutes = 120
+    reservation = rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    with pytest.raises(rs.CancellationCutoffError):
+        rs.assert_cancellable(reservation, regulation, now=START + timedelta(minutes=10))
+
+
 def test_min_free_ram_in_range(setup):
     session, gpu, regulation, user = setup
     rs.create_reservation(session, user, gpu, START, END, 8000, regulation, now=NOW)

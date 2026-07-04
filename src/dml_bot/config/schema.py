@@ -34,6 +34,10 @@ class RegulationConfig:
     booking_horizon_days: int = 90
     min_reservation_slot_minutes: int = 30
     max_active_reservations_per_user: int = 3
+    # Minimum notice (minutes) a student must give before a reservation's start to self-cancel it
+    # without penalty; 0 disables the cutoff (students may cancel anytime before start, as in v1).
+    # Admin-initiated cancellations (single/bulk/override) always bypass this cutoff.
+    min_cancellation_notice_minutes: int = 0
 
 
 @dataclass
@@ -41,12 +45,6 @@ class SchedulerConfig:
     poll_interval_seconds: int = 60
     reminder_minutes_before: int = 15
     cleanup_retention_days: int = 30
-
-
-@dataclass
-class WebappConfig:
-    host: str = "0.0.0.0"
-    port: int = 8080
 
 
 @dataclass
@@ -88,13 +86,12 @@ class ListGridsConfig:
 
 @dataclass
 class AppConfig:
-    interface: str = "webapp"  # "webapp", "legacy" (classic inline menu), or "reply_keyboard"
+    interface: str = "reply_keyboard"  # "legacy" (classic inline menu) or "reply_keyboard"
     bot: BotConfig = field(default_factory=BotConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     regulation: RegulationConfig = field(default_factory=RegulationConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    webapp: WebappConfig = field(default_factory=WebappConfig)
     schedule_chart: ScheduleChartConfig = field(default_factory=ScheduleChartConfig)
     ram_input: RamInputConfig = field(default_factory=RamInputConfig)
     list_grids: ListGridsConfig = field(default_factory=ListGridsConfig)

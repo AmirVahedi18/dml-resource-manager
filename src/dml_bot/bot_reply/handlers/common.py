@@ -14,6 +14,7 @@ from dml_bot.bot_reply.keyboards import (
     paginated_list_keyboard,
 )
 from dml_bot.db.session import session_scope
+from dml_bot.services import invite_service, user_service
 
 HELP_TEXT_STUDENT = (
     "<b>DML Resource Manager — Help</b>\n\n"
@@ -22,7 +23,7 @@ HELP_TEXT_STUDENT = (
     "almost every screen:\n"
     "• ◀ Back — goes back exactly one screen (not all the way to the start).\n"
     "• 🏠 Main Menu — exits whatever you're doing and returns to the main menu, from anywhere.\n\n"
-    "Not registered yet? Send /myid and give that number to the lab admin so they can add you.\n\n"
+    "Not registered yet? Ask the lab admin for an invite code, then send /start &lt;code&gt;.\n\n"
     "<b>📅 Reserve GPU</b> — book a GPU for a future time slot:\n"
     "1. Step 1/5 — pick a GPU from the list (only servers the admin gave you access to are shown).\n"
     "2. Step 2/5 — pick a date.\n"
@@ -34,7 +35,9 @@ HELP_TEXT_STUDENT = (
     "6. Review the summary and tap ✅ Confirm to book it, or ◀ Back to change the RAM/duration.\n\n"
     "<b>🗂 My Reservations</b> — cancel a reservation you made:\n"
     "1. Pick a reservation from the list (shows GPU, start → end time, and RAM).\n"
-    "2. Review the details and tap ✅ Confirm to cancel it, or ◀ Back to pick a different one.\n\n"
+    "2. Review the details and tap ✅ Confirm to cancel it, or ◀ Back to pick a different one. If "
+    "the lab requires advance notice to cancel, doing so too close to the start time is rejected "
+    "with an explanation.\n\n"
     "<b>🗓 Schedule</b> — see how busy a GPU is:\n"
     "1. Step 1/2 — pick a GPU.\n"
     "2. Step 2/2 — pick a date range (Today, or a day-count preset, limited by the booking "
@@ -52,8 +55,11 @@ HELP_TEXT_ADMIN = (
     "<b>👤 Manage Users</b>:\n"
     "1. See all registered students (✅ active/🚫 inactive, ⭐ = multi-GPU privilege), or tap "
     "➕ Add User.\n"
-    "2. Add User: send the student's Telegram numeric ID (from their /myid), then their full "
-    "name, then pick at least one server to grant them access to.\n"
+    "2. Add User: type the student's full name, then pick at least one server to grant them "
+    "access to -- you'll get a one-time invite code to send the student. They send /start "
+    "&lt;code&gt; to this bot to finish registering themselves; no need to look up their "
+    "Telegram ID first. Pending (not-yet-redeemed) invites are listed alongside registered "
+    "students, with a 🗑 to revoke one.\n"
     "3. Tap a student to see actions: ✅/🚫 activate/deactivate, ⭐ grant/revoke multi-GPU, "
     "✏️ rename, 🔐 edit server access, 🗑 permanently remove (with confirmation).\n\n"
     "<b>🖥 Manage Servers</b>:\n"
@@ -63,7 +69,10 @@ HELP_TEXT_ADMIN = (
     "3. Tap a server to rename/deactivate/activate/delete it (with confirmation), or tap one of "
     "its GPUs to rename/deactivate/activate/delete that GPU.\n\n"
     "<b>⚖️ Regulation</b>: tap a field (max RAM per reservation, max duration, booking horizon, "
-    "time slot size, max active reservations per user) and type its new value.\n\n"
+    "time slot size, max active reservations per user, min. notice to self-cancel) and type its "
+    "new value. Every field except the cancellation-notice one requires a positive whole number; "
+    "that one also accepts 0, which disables the cancellation cutoff entirely. Admin "
+    "cancellations (single, bulk, or override) always ignore this cutoff.\n\n"
     "<b>📊 Usage Report</b>: pick 👤 By User or 🖥 By GPU, then a date range preset, to get a bar "
     "chart of usage.\n\n"
     "<b>📋 All Reservations</b>:\n"
@@ -87,14 +96,36 @@ async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, te
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    telegram_id = update.effective_user.id
     with session_scope() as session:
-        user = get_active_user(session, update.effective_user.id)
-        if user is None and not is_admin(update.effective_user.id, context):
-            await update.effective_message.reply_text(
-                "You're not registered for the DML Resource Manager yet.\n"
-                "Send /myid and give that number to the lab admin to get registered."
-            )
-            return
+        user = get_active_user(session, telegram_id)
+        if user is None and not is_admin(telegram_id, context):
+            code = context.args[0] if context.args else None
+            if code is None:
+                await update.effective_message.reply_text(
+                    "You're not registered for the DML Resource Manager yet.\n"
+                    "Ask the lab admin for an invite code, then send /start <code> to register."
+                )
+                return
+            try:
+                invite_service.redeem_invite(session, code=code, telegram_id=telegram_id)
+            except invite_service.InviteNotFoundError:
+                await update.effective_message.reply_text(
+                    "That invite code isn't valid. Ask the lab admin for a new one."
+                )
+                return
+            except invite_service.InviteAlreadyUsedError:
+                await update.effective_message.reply_text(
+                    "That invite code has already been used. Ask the lab admin for a new one."
+                )
+                return
+            except user_service.UserAlreadyExistsError:
+                await update.effective_message.reply_text(
+                    "You already have an account (it may be deactivated) -- ask the lab admin "
+                    "to reactivate it instead of using an invite code."
+                )
+                return
+            await update.effective_message.reply_text("✅ You're now registered!")
     await show_main_menu(update, context, "Welcome to the DML Resource Manager.")
 
 

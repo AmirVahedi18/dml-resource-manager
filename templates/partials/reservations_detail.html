@@ -1,7 +1,0 @@
-{% include "partials/_home_button.html" %}
-<div class="card">
-  <p>{{ summary | safe }}</p>
-  <form hx-post="/api/reservations/{{ reservation.id }}/cancel" hx-target="#content">
-    <button type="submit">❌ Cancel this reservation</button>
-  </form>
-</div>

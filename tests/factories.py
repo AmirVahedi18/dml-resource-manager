@@ -35,6 +35,7 @@ def make_regulation(session, **overrides):
         booking_horizon_days=90,
         min_reservation_slot_minutes=30,
         max_active_reservations_per_user=3,
+        min_cancellation_notice_minutes=0,
     )
     defaults.update(overrides)
     regulation = Regulation(**defaults)

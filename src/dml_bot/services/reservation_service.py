@@ -42,6 +42,10 @@ class ActiveReservationLimitError(ReservationError):
     pass
 
 
+class CancellationCutoffError(ReservationError):
+    pass
+
+
 def get_overlapping_active_reservations(
     session: Session, gpu_id: int, start_time: datetime, end_time: datetime
 ) -> list[Reservation]:
@@ -186,6 +190,21 @@ def create_reservation(
     session.add(reservation)
     session.flush()
     return reservation
+
+
+def assert_cancellable(reservation: Reservation, regulation: Regulation, now: datetime | None = None) -> None:
+    """Raises CancellationCutoffError if `reservation` is inside the regulation's minimum
+    self-cancellation notice window. Only meant for student-initiated cancellations -- admin
+    cancellations (single, bulk, override) intentionally skip this check entirely."""
+    cutoff_minutes = regulation.min_cancellation_notice_minutes
+    if cutoff_minutes <= 0:
+        return
+    now = to_naive_utc(now) if now else utc_now()
+    notice = reservation.start_time - now
+    if notice < timedelta(minutes=cutoff_minutes):
+        raise CancellationCutoffError(
+            f"reservations require at least {cutoff_minutes} minute(s) notice before start to cancel"
+        )
 
 
 def cancel_reservation(session: Session, reservation: Reservation, now: datetime | None = None) -> Reservation:
