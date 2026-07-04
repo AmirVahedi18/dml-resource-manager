@@ -86,7 +86,6 @@ class ListGridsConfig:
 
 @dataclass
 class AppConfig:
-    interface: str = "reply_keyboard"  # "legacy" (classic inline menu) or "reply_keyboard"
     bot: BotConfig = field(default_factory=BotConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)

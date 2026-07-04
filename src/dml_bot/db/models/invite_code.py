@@ -8,9 +8,9 @@ from dml_bot.db.base import Base
 
 class InviteCode(Base):
     """A one-time code an admin generates for a specific (pre-filled) student registration.
-    `server_ids` is a comma-separated list of `Server.id` values (empty string for interfaces
-    that don't restrict server access) since there's no per-user row to attach a many-to-many
-    table to until the invite is redeemed and the `User` actually exists."""
+    `server_ids` is a comma-separated list of `Server.id` values (empty string means no server
+    access granted) since there's no per-user row to attach a many-to-many table to until the
+    invite is redeemed and the `User` actually exists."""
 
     __tablename__ = "invite_codes"
 

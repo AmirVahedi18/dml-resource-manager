@@ -1,6 +1,6 @@
-"""Shared "choose a GPU" step used by reserve/schedule/watch -- all three flatten the legacy
-"choose a server, then choose a GPU" pair of screens into one paginated list of every GPU the
-caller has access to.
+"""Shared "choose a GPU" step used by reserve/schedule/watch -- all three flatten what would
+otherwise be a "choose a server, then choose a GPU" pair of screens into one paginated list of
+every GPU the caller has access to.
 """
 from telegram import Update
 from telegram.ext import ContextTypes

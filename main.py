@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 from telegram import MenuButtonDefault
 
-from dml_bot.bot.app import build_application
 from dml_bot.bot_reply.app import build_reply_application
 from dml_bot.config.schema import AppConfig, register_configs
 from dml_bot.db.session import init_engine, session_scope
@@ -55,12 +54,6 @@ def main(cfg: DictConfig) -> None:
     if tz_override:
         app_cfg.bot.timezone = tz_override
 
-    if app_cfg.interface not in {"legacy", "reply_keyboard"}:
-        raise ValueError(
-            "configs/config.yaml: interface must be 'legacy' or 'reply_keyboard', "
-            f"got {app_cfg.interface!r}"
-        )
-
     setup_logging(app_cfg.logging)
     logger = logging.getLogger("dml_bot.main")
 
@@ -71,12 +64,9 @@ def main(cfg: DictConfig) -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     admin_ids = {int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()}
 
-    if app_cfg.interface == "reply_keyboard":
-        application = build_reply_application(token, admin_ids, app_cfg)
-    else:
-        application = build_application(token, admin_ids, app_cfg)
+    application = build_reply_application(token, admin_ids, app_cfg)
 
-    logger.info("DML Resource Manager starting in %r interface mode", app_cfg.interface)
+    logger.info("DML Resource Manager starting")
     asyncio.run(_run(application, app_cfg))
 
 

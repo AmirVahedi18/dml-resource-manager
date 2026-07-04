@@ -12,8 +12,6 @@ defaults:
   - override hydra/hydra_logging: disabled
   - _self_
 
-interface: reply_keyboard  # "legacy" (classic inline menu) or "reply_keyboard"
-
 hydra:
   job:
     chdir: false

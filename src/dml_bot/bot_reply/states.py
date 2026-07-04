@@ -21,9 +21,9 @@ class ScheduleStates(IntEnum):
 
 
 class WatchFlowStates(IntEnum):
-    """A single enum (not split per sub-flow), matching the legacy interface's precedent -- one
-    ConversationHandler mixes the watch list/cancel screens and the new-watch wizard, and IntEnum
-    members compare equal (and collide as dict keys) across different enums when values match."""
+    """A single enum (not split per sub-flow) since one ConversationHandler mixes the watch
+    list/cancel screens and the new-watch wizard, and IntEnum members compare equal (and collide
+    as dict keys) across different enums when values match."""
 
     MENU = auto()
     CONFIRM_CANCEL = auto()

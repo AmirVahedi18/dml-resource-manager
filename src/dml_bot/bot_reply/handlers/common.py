@@ -2,7 +2,6 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from dml_bot.bot.auth import get_active_user, is_admin
-from dml_bot.bot.handlers.common import myid_command  # noqa: F401 -- interface-agnostic, reused as-is
 from dml_bot.bot_reply.keyboards import (
     BACK,
     MAIN_MENU,
@@ -90,6 +89,13 @@ HELP_TEXT_ADMIN = (
     "CANCEL ALL to confirm.\n"
     "3. Any student whose reservation you cancel gets notified automatically."
 )
+
+
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_message.reply_text(
+        f"Your Telegram ID is: <code>{update.effective_user.id}</code>",
+        parse_mode="HTML",
+    )
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Main menu:") -> None:
