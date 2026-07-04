@@ -254,6 +254,76 @@ user promoted via the DB role sees and uses every other admin feature identicall
 promote or demote anyone else's admin status. Deactivating a promoted admin's account
 (**🚫 Deactivate**) also removes their admin rights while inactive, same as it would for a student.
 
+### Deploying with Docker
+
+A `Dockerfile` and `docker-compose.yml` give the lab server a repeatable deployment path that
+doesn't depend on a hand-configured virtualenv. The image installs `requirements.txt` and the
+`dml_bot` package (same two steps as the manual [Setup](#setup)), runs as a non-root user, and
+keeps `data/` (the SQLite file) and `logs/` on the host via bind mounts so they survive container
+rebuilds and stay directly inspectable on the server.
+
+1. **Configure secrets**, same as manual setup:
+
+   ```bash
+   cp .env.example .env
+   # then fill in TELEGRAM_BOT_TOKEN, ADMIN_IDS, TZ
+   ```
+
+2. **Build and start the bot:**
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   This builds the image, creates `./data` and `./logs` on the host if they don't exist, mounts
+   them into the container, and starts the bot in the background with `restart: unless-stopped` (so
+   it comes back up automatically after a server reboot or crash).
+
+3. **Check it's running / follow logs:**
+
+   ```bash
+   docker compose ps
+   docker compose logs -f
+   ```
+
+4. **Apply a config or code change:**
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   Rebuilds the image and recreates the container; `data/` and `logs/` are untouched since they
+   live on the host, not inside the container.
+
+5. **Stop the bot:**
+
+   ```bash
+   docker compose down
+   ```
+
+   The container is removed but `./data` and `./logs` remain on the host.
+
+Hydra command-line overrides (e.g. changing a regulation default) can be passed by editing the
+`command:` key in `docker-compose.yml`, since Hydra reads `sys.argv` the same way whether it's
+invoked directly or inside a container:
+
+```yaml
+services:
+  dml-bot:
+    command: ["python", "main.py", "regulation.booking_horizon_days=60"]
+```
+
+Without Docker Compose, the equivalent manual commands are:
+
+```bash
+docker build -t dml-resource-manager .
+docker run -d --name dml-resource-manager --restart unless-stopped \
+  --env-file .env \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/logs:/app/logs" \
+  dml-resource-manager
+```
+
 ### Watches and auto-booking
 
 **🔔 Watches** let a student ask to hear about free capacity on a GPU over a date range, without
