@@ -28,10 +28,11 @@ def test_list_users_excludes_inactive_by_default(db_session):
     assert [u.id for u in listed] == [active.id]
 
 
-def test_set_privilege(db_session):
+def test_set_max_concurrent_gpus(db_session):
     user = us.register_user(db_session, telegram_id=1, full_name="Alice")
-    us.set_privilege(db_session, user, True)
-    assert user.can_use_multiple_gpus is True
+    assert user.max_concurrent_gpus == 1
+    us.set_max_concurrent_gpus(db_session, user, 3)
+    assert user.max_concurrent_gpus == 3
 
 
 def test_set_admin(db_session):

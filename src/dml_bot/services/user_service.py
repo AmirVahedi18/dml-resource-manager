@@ -41,8 +41,10 @@ def set_active(session: Session, user: User, is_active: bool) -> User:
     return user
 
 
-def set_privilege(session: Session, user: User, can_use_multiple_gpus: bool) -> User:
-    user.can_use_multiple_gpus = can_use_multiple_gpus
+def set_max_concurrent_gpus(session: Session, user: User, max_concurrent_gpus: int) -> User:
+    if max_concurrent_gpus < 1:
+        raise ValueError("max_concurrent_gpus must be at least 1")
+    user.max_concurrent_gpus = max_concurrent_gpus
     session.flush()
     return user
 

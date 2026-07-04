@@ -40,6 +40,7 @@ class AdminUserStates(IntEnum):
     RENAME = auto()
     CONFIRM_DELETE = auto()
     EDIT_SERVER_ACCESS = auto()
+    SET_MAX_GPUS = auto()
 
 
 class AdminServerStates(IntEnum):

@@ -105,13 +105,50 @@ def test_one_gpu_per_user_restriction(setup):
         rs.create_reservation(session, user, gpu2, START, END, 4096, regulation, now=NOW)
 
 
-def test_privileged_user_bypasses_one_gpu_restriction(setup):
+def test_user_with_multi_gpu_privilege_bypasses_one_gpu_restriction(setup):
     session, gpu, regulation, user = setup
-    user.can_use_multiple_gpus = True
+    user.max_concurrent_gpus = 2
     server2 = make_server(session, name="server-2")
     gpu2 = make_gpu(session, server2, total_ram_mb=20000)
     rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
     second = rs.create_reservation(session, user, gpu2, START, END, 4096, regulation, now=NOW)
+    assert second.id is not None
+
+
+def test_user_with_limit_2_can_hold_2_concurrent_reservations(setup):
+    session, gpu, regulation, user = setup
+    user.max_concurrent_gpus = 2
+    server2 = make_server(session, name="server-2")
+    gpu2 = make_gpu(session, server2, total_ram_mb=20000)
+    server3 = make_server(session, name="server-3")
+    gpu3 = make_gpu(session, server3, total_ram_mb=20000)
+
+    rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    rs.create_reservation(session, user, gpu2, START, END, 4096, regulation, now=NOW)
+
+    with pytest.raises(rs.ConcurrentGpuConflictError):
+        rs.create_reservation(session, user, gpu3, START, END, 4096, regulation, now=NOW)
+
+
+def test_user_with_limit_1_cannot_hold_2_concurrent_reservations(setup):
+    session, gpu, regulation, user = setup
+    assert user.max_concurrent_gpus == 1
+    server2 = make_server(session, name="server-2")
+    gpu2 = make_gpu(session, server2, total_ram_mb=20000)
+
+    rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+
+    with pytest.raises(rs.ConcurrentGpuConflictError):
+        rs.create_reservation(session, user, gpu2, START, END, 4096, regulation, now=NOW)
+
+
+def test_concurrent_gpu_limit_not_counted_twice_for_same_gpu(setup):
+    session, gpu, regulation, user = setup
+    user.max_concurrent_gpus = 1
+    rs.create_reservation(session, user, gpu, START, END, 4096, regulation, now=NOW)
+    later_start = END
+    later_end = later_start + timedelta(hours=1)
+    second = rs.create_reservation(session, user, gpu, later_start, later_end, 4096, regulation, now=NOW)
     assert second.id is not None
 
 

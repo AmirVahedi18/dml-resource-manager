@@ -166,18 +166,17 @@ def create_reservation(
             f"only {gpu.total_ram_mb - peak}mb free on this GPU for the requested window"
         )
 
-    if not user.can_use_multiple_gpus:
-        stmt = select(Reservation).where(
-            Reservation.user_id == user.id,
-            Reservation.gpu_id != gpu.id,
-            Reservation.status == ReservationStatus.ACTIVE,
-            Reservation.start_time < end_time,
-            Reservation.end_time > start_time,
+    stmt = select(Reservation.gpu_id).distinct().where(
+        Reservation.user_id == user.id,
+        Reservation.status == ReservationStatus.ACTIVE,
+        Reservation.start_time < end_time,
+        Reservation.end_time > start_time,
+    )
+    concurrent_gpu_ids = set(session.execute(stmt).scalars().all())
+    if gpu.id not in concurrent_gpu_ids and len(concurrent_gpu_ids) >= user.max_concurrent_gpus:
+        raise ConcurrentGpuConflictError(
+            f"user already holds reservations on {len(concurrent_gpu_ids)} GPU(s) (max: {user.max_concurrent_gpus})"
         )
-        if session.execute(stmt).scalars().first() is not None:
-            raise ConcurrentGpuConflictError(
-                "user already holds a reservation on another GPU during this window"
-            )
 
     reservation = Reservation(
         user_id=user.id,

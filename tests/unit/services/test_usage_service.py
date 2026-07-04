@@ -52,7 +52,7 @@ def test_get_reservations_in_range_filters_by_server(db_session):
     gpu1 = make_gpu(db_session, server1, total_ram_mb=20000)
     gpu2 = make_gpu(db_session, server2, total_ram_mb=20000)
     regulation = make_regulation(db_session)
-    user = make_user(db_session, telegram_id=1, can_use_multiple_gpus=True)
+    user = make_user(db_session, telegram_id=1, max_concurrent_gpus=2)
     rs.create_reservation(db_session, user, gpu1, START, END, 4096, regulation, now=NOW)
     rs.create_reservation(db_session, user, gpu2, START, END, 4096, regulation, now=NOW)
 

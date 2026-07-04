@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from dml_bot.db.base import Base
@@ -13,7 +13,7 @@ class User(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     student_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    can_use_multiple_gpus: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    max_concurrent_gpus: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Promotable admin role granted by a bootstrap admin (see `ADMIN_IDS` in `.env`), letting a TA
     # get admin rights without redeploying. Bootstrap admins are always admins regardless of this

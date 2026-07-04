@@ -1,8 +1,8 @@
 from dml_bot.db.models import GPU, Regulation, Server, User
 
 
-def make_user(session, telegram_id=1, full_name="Test User", can_use_multiple_gpus=False):
-    user = User(telegram_id=telegram_id, full_name=full_name, can_use_multiple_gpus=can_use_multiple_gpus)
+def make_user(session, telegram_id=1, full_name="Test User", max_concurrent_gpus=1):
+    user = User(telegram_id=telegram_id, full_name=full_name, max_concurrent_gpus=max_concurrent_gpus)
     session.add(user)
     session.flush()
     return user

@@ -40,9 +40,10 @@ def _user_items(session) -> list[tuple[str, int | tuple]]:
     share this one paginated list since they're both "who's on the roster" from an admin's view."""
     items = []
     for u in user_service.list_users(session, active_only=False):
+        gpu_label = f"({u.max_concurrent_gpus}GPU)" if u.max_concurrent_gpus > 1 else ""
         flags = (
             ("✅" if u.is_active else "🚫")
-            + (" ⭐" if u.can_use_multiple_gpus else "")
+            + (" " + gpu_label if gpu_label else "")
             + (" 🛡" if u.is_admin else "")
         )
         items.append((f"{u.full_name} {flags}", u.id))
@@ -89,14 +90,14 @@ async def _show_user_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"<b>{user.full_name}</b>\n"
             f"Telegram ID: {user.telegram_id}\n"
             f"Status: {'active' if user.is_active else 'inactive'}\n"
-            f"Multi-GPU privilege: {'yes' if user.can_use_multiple_gpus else 'no'}\n"
+            f"Max concurrent GPUs: {user.max_concurrent_gpus}\n"
             f"Admin role: {'yes' if user.is_admin else 'no'}"
         )
         actions = [
             ("🚫 Deactivate" if user.is_active else "✅ Activate", ("toggle_active", user_id)),
             (
-                "⭐ Revoke multi-GPU" if user.can_use_multiple_gpus else "⭐ Grant multi-GPU",
-                ("toggle_privilege", user_id),
+                "🔢 Set max concurrent GPUs",
+                ("set_max_gpus", user_id),
             ),
             ("✏️ Rename", ("rename", user_id)),
             ("🔐 Server Access", ("access", user_id)),
@@ -175,6 +176,13 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 user = session.get(User, user_id)
                 user_service.set_admin(session, user, not user.is_admin)
             return await _show_user_detail(update, context, user_id)
+        if action == "set_max_gpus":
+            context.user_data["_viewing_user_id"] = user_id
+            await update.effective_message.reply_text(
+                "Enter the maximum number of GPUs this student can hold concurrent reservations on (1 or more):",
+                reply_markup=cancel_only_keyboard(),
+            )
+            return AdminUserStates.SET_MAX_GPUS
         if action == "revokeinvite":
             invite_id = user_id
             with session_scope() as session:
@@ -190,8 +198,6 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             user = session.get(User, user_id)
             if action == "toggle_active":
                 user_service.set_active(session, user, not user.is_active)
-            else:
-                user_service.set_privilege(session, user, not user.can_use_multiple_gpus)
             items = _user_items(session)
         context.user_data["_user_items"] = items
         context.user_data["_page"] = 0
@@ -217,6 +223,33 @@ async def receive_rename(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["_user_items"] = items
     context.user_data["_page"] = 0
     await update.effective_message.reply_text(f"✅ Renamed to {text}.")
+    return await _render_list_step(update, context)
+
+
+async def receive_max_gpus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.effective_message.text.strip()
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        return await _show_user_detail(update, context, context.user_data["_viewing_user_id"])
+
+    try:
+        max_gpus = int(text)
+        if max_gpus < 1:
+            await update.effective_message.reply_text("Please enter a number ≥ 1.")
+            return AdminUserStates.SET_MAX_GPUS
+    except ValueError:
+        await update.effective_message.reply_text("Please enter a valid number.")
+        return AdminUserStates.SET_MAX_GPUS
+
+    user_id = context.user_data["_viewing_user_id"]
+    with session_scope() as session:
+        user = session.get(User, user_id)
+        user_service.set_max_concurrent_gpus(session, user, max_gpus)
+        items = _user_items(session)
+    context.user_data["_user_items"] = items
+    context.user_data["_page"] = 0
+    await update.effective_message.reply_text(f"✅ Max concurrent GPUs set to {max_gpus}.")
     return await _render_list_step(update, context)
 
 
@@ -366,6 +399,7 @@ def users_conversation() -> ConversationHandler:
             AdminUserStates.RENAME: [MessageHandler(text_filter, receive_rename)],
             AdminUserStates.CONFIRM_DELETE: [MessageHandler(text_filter, confirm_delete)],
             AdminUserStates.EDIT_SERVER_ACCESS: [MessageHandler(text_filter, choose_edit_access)],
+            AdminUserStates.SET_MAX_GPUS: [MessageHandler(text_filter, receive_max_gpus)],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_admin_users_conversation",
