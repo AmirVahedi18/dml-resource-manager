@@ -3,7 +3,7 @@ from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, Mess
 
 from dml_bot.bot.auth import require_admin
 from dml_bot.bot_reply.choice_map import resolve_choice
-from dml_bot.bot_reply.handlers.common import cancel_wizard, show_main_menu
+from dml_bot.bot_reply.handlers.common import cancel_wizard, cancel_wizard_to_admin, show_main_menu
 from dml_bot.bot_reply.keyboards import BACK, MAIN_MENU, action_keyboard, cancel_only_keyboard
 from dml_bot.bot_reply.states import AdminRegulationStates
 from dml_bot.db.session import session_scope
@@ -38,8 +38,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def choose_field(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.effective_message.text
-    if text in (MAIN_MENU, BACK):  # this is the first screen, so Back also exits
+    if text == MAIN_MENU:
         return await cancel_wizard(update, context)
+    if text == BACK:  # this is the first screen, so Back steps up to the Admin Panel menu
+        return await cancel_wizard_to_admin(update, context)
 
     field = resolve_choice(context, text)
     if field is None:

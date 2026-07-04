@@ -4,8 +4,9 @@ from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from dml_bot.bot.auth import require_admin
+from dml_bot.bot.formatting import fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
-from dml_bot.bot_reply.handlers.common import cancel_wizard, show_main_menu
+from dml_bot.bot_reply.handlers.common import cancel_wizard, cancel_wizard_to_admin, show_main_menu
 from dml_bot.bot_reply.keyboards import BACK, MAIN_MENU, action_keyboard
 from dml_bot.bot_reply.states import AdminUsageStates
 from dml_bot.charts.usage_charts import render_bar_chart
@@ -45,8 +46,10 @@ async def _render_range_step(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def choose_scope(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.effective_message.text
-    if text in (MAIN_MENU, BACK):  # this is the first screen, so Back also exits
+    if text == MAIN_MENU:
         return await cancel_wizard(update, context)
+    if text == BACK:  # this is the first screen, so Back steps up to the Admin Panel menu
+        return await cancel_wizard_to_admin(update, context)
 
     scope = resolve_choice(context, text)
     if scope is None:
@@ -92,7 +95,10 @@ async def choose_range(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         else:
             totals = usage_service.total_ram_hours_by_gpu(reservations, range_start, range_end)
             gpus = {gid: session.get(GPU, gid) for gid in totals}
-            labels = [f"{gpus[gid].server.name} GPU{gpus[gid].index_on_server}" for gid in totals]
+            labels = [
+                f"{gpus[gid].server.name} GPU{gpus[gid].index_on_server} ({fmt_ram(gpus[gid].total_ram_mb)})"
+                for gid in totals
+            ]
             ylabel = "MB-hours"
             title = "Usage by GPU"
 

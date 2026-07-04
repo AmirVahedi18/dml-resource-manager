@@ -3,23 +3,34 @@ from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, Mess
 
 from dml_bot.bot.auth import require_admin
 from dml_bot.bot_reply.choice_map import resolve_choice
-from dml_bot.bot_reply.handlers.common import cancel_wizard, handle_back_or_cancel, show_main_menu
+from dml_bot.bot_reply.handlers.common import (
+    cancel_wizard,
+    cancel_wizard_to_admin,
+    handle_back_or_cancel,
+    show_main_menu,
+)
 from dml_bot.bot_reply.keyboards import (
     BACK,
     CONFIRM,
+    DONE,
     MAIN_MENU,
     action_keyboard,
     cancel_only_keyboard,
     confirm_keyboard,
     paginated_list_keyboard,
+    toggle_list_keyboard,
 )
 from dml_bot.bot_reply.states import AdminUserStates
 from dml_bot.db.models.user import User
 from dml_bot.db.session import session_scope
-from dml_bot.services import user_service
+from dml_bot.services import server_access_service, server_service, user_service
 
 MENU_BUTTON = "👤 Manage Users"
 ADD_USER = "➕ Add User"
+
+
+def _server_toggle_items(session) -> list[tuple[str, int]]:
+    return [(server.name, server.id) for server in server_service.list_servers(session)]
 
 
 def _user_items(session) -> list[tuple[str, int]]:
@@ -34,7 +45,10 @@ async def _render_list_step(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data.pop("_viewing_user_id", None)
     items = context.user_data.get("_user_items", [])
     page = context.user_data.get("_page", 0)
-    markup = paginated_list_keyboard(context, items, page, extra_rows=[[ADD_USER]])
+    grid = context.application.bot_data["config"].list_grids.user_list
+    markup = paginated_list_keyboard(
+        context, items, page, extra_rows=[[ADD_USER]], columns=grid.columns, rows=grid.rows
+    )
     text = "Registered users (✅ active, 🚫 inactive, ⭐ privileged):" if items else "No users registered yet."
     await update.effective_message.reply_text(text, reply_markup=markup)
     return AdminUserStates.MENU
@@ -69,6 +83,7 @@ async def _show_user_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 ("toggle_privilege", user_id),
             ),
             ("✏️ Rename", ("rename", user_id)),
+            ("🔐 Server Access", ("access", user_id)),
             ("🗑 Remove", ("delete", user_id)),
         ]
     markup = action_keyboard(context, actions)
@@ -89,7 +104,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     back_render = (
         (lambda: _render_list_step(update, context))
         if viewing_user_id is not None
-        else (lambda: cancel_wizard(update, context))
+        else (lambda: cancel_wizard_to_admin(update, context))
     )
     result = await handle_back_or_cancel(update, context, lambda: _render_list_step(update, context), back_render)
     if result is not None:
@@ -117,6 +132,17 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 reply_markup=confirm_keyboard(),
             )
             return AdminUserStates.CONFIRM_DELETE
+        if action == "access":
+            context.user_data["_viewing_user_id"] = user_id
+            with session_scope() as session:
+                items = _server_toggle_items(session)
+                selected = server_access_service.list_accessible_server_ids(session, user_id)
+            if not items:
+                await update.effective_message.reply_text("No servers exist yet -- add one first (🖥 Manage Servers).")
+                return await _show_user_detail(update, context, user_id)
+            context.user_data["_server_toggle_items"] = items
+            context.user_data["_edit_access_ids"] = selected
+            return await _render_edit_access_step(update, context)
 
         with session_scope() as session:
             user = session.get(User, user_id)
@@ -173,6 +199,43 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return await _render_list_step(update, context)
 
 
+async def _render_edit_access_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    items = context.user_data["_server_toggle_items"]
+    selected = context.user_data.get("_edit_access_ids", set())
+    markup = toggle_list_keyboard(context, items, selected)
+    await update.effective_message.reply_text(
+        "Toggle this student's server access, then tap Done:", reply_markup=markup
+    )
+    return AdminUserStates.EDIT_SERVER_ACCESS
+
+
+async def choose_edit_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.effective_message.text
+    user_id = context.user_data["_viewing_user_id"]
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        return await _show_user_detail(update, context, user_id)
+    if text == DONE:
+        selected = context.user_data.get("_edit_access_ids", set())
+        with session_scope() as session:
+            server_access_service.set_access(session, user_id, selected)
+        await update.effective_message.reply_text(f"✅ Access updated ({len(selected)} server(s) granted).")
+        return await _show_user_detail(update, context, user_id)
+
+    choice = resolve_choice(context, text)
+    if choice is None:
+        await update.effective_message.reply_text("Please use one of the buttons below.")
+        return AdminUserStates.EDIT_SERVER_ACCESS
+
+    selected = context.user_data.setdefault("_edit_access_ids", set())
+    if choice in selected:
+        selected.discard(choice)
+    else:
+        selected.add(choice)
+    return await _render_edit_access_step(update, context)
+
+
 async def receive_telegram_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.effective_message.text.strip()
     if text == MAIN_MENU:
@@ -209,14 +272,70 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.effective_message.reply_text("Please send a non-empty name.")
         return AdminUserStates.ADD_FULL_NAME
 
-    telegram_id = context.user_data["new_telegram_id"]
+    context.user_data["new_full_name"] = full_name
     with session_scope() as session:
-        user_service.register_user(session, telegram_id=telegram_id, full_name=full_name)
+        items = _server_toggle_items(session)
+    if not items:
+        await update.effective_message.reply_text(
+            "No servers exist yet -- add one first (🖥 Manage Servers), then add this user."
+        )
+        context.user_data.clear()
+        await show_main_menu(update, context)
+        return ConversationHandler.END
 
-    context.user_data.clear()
-    await update.effective_message.reply_text(f"✅ Registered {full_name} (Telegram ID {telegram_id}).")
-    await show_main_menu(update, context)
-    return ConversationHandler.END
+    context.user_data["_server_toggle_items"] = items
+    context.user_data["_new_access_ids"] = set()
+    return await _render_new_user_access_step(update, context)
+
+
+async def _render_new_user_access_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    items = context.user_data["_server_toggle_items"]
+    selected = context.user_data.get("_new_access_ids", set())
+    markup = toggle_list_keyboard(context, items, selected)
+    await update.effective_message.reply_text(
+        "Select which server(s) this student can access, then tap Done (at least one required):",
+        reply_markup=markup,
+    )
+    return AdminUserStates.ADD_SERVER_ACCESS
+
+
+async def choose_new_user_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.effective_message.text
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        await update.effective_message.reply_text("Now send their full name:", reply_markup=cancel_only_keyboard())
+        return AdminUserStates.ADD_FULL_NAME
+    if text == DONE:
+        selected = context.user_data.get("_new_access_ids", set())
+        if not selected:
+            await update.effective_message.reply_text("Select at least one server before continuing.")
+            return await _render_new_user_access_step(update, context)
+
+        telegram_id = context.user_data["new_telegram_id"]
+        full_name = context.user_data["new_full_name"]
+        with session_scope() as session:
+            user = user_service.register_user(session, telegram_id=telegram_id, full_name=full_name)
+            server_access_service.set_access(session, user.id, selected)
+
+        context.user_data.clear()
+        await update.effective_message.reply_text(
+            f"✅ Registered {full_name} (Telegram ID {telegram_id}) with access to {len(selected)} server(s)."
+        )
+        await show_main_menu(update, context)
+        return ConversationHandler.END
+
+    choice = resolve_choice(context, text)
+    if choice is None:
+        await update.effective_message.reply_text("Please use one of the buttons below.")
+        return AdminUserStates.ADD_SERVER_ACCESS
+
+    selected = context.user_data.setdefault("_new_access_ids", set())
+    if choice in selected:
+        selected.discard(choice)
+    else:
+        selected.add(choice)
+    return await _render_new_user_access_step(update, context)
 
 
 def users_conversation() -> ConversationHandler:
@@ -227,8 +346,10 @@ def users_conversation() -> ConversationHandler:
             AdminUserStates.MENU: [MessageHandler(text_filter, menu_choice)],
             AdminUserStates.ADD_TELEGRAM_ID: [MessageHandler(text_filter, receive_telegram_id)],
             AdminUserStates.ADD_FULL_NAME: [MessageHandler(text_filter, receive_full_name)],
+            AdminUserStates.ADD_SERVER_ACCESS: [MessageHandler(text_filter, choose_new_user_access)],
             AdminUserStates.RENAME: [MessageHandler(text_filter, receive_rename)],
             AdminUserStates.CONFIRM_DELETE: [MessageHandler(text_filter, confirm_delete)],
+            AdminUserStates.EDIT_SERVER_ACCESS: [MessageHandler(text_filter, choose_edit_access)],
         },
         fallbacks=[MessageHandler(text_filter, cancel_wizard), CommandHandler("cancel", cancel_wizard)],
         name="reply_admin_users_conversation",

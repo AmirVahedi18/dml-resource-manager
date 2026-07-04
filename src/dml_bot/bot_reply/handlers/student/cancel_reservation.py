@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from dml_bot.bot.auth import get_active_user
-from dml_bot.bot.formatting import fmt_dt
+from dml_bot.bot.formatting import fmt_dt, fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
@@ -24,7 +24,11 @@ async def _reservation_items(session, telegram_id: int, tz_name: str) -> list[tu
         return []
     reservations = reservation_service.list_active_reservations_for_user(session, user.id)
     return [
-        (f"{r.gpu.server.name} GPU{r.gpu.index_on_server} · {fmt_dt(r.start_time, tz_name)}", r.id)
+        (
+            f"{r.gpu.server.name} GPU{r.gpu.index_on_server} · "
+            f"{fmt_dt(r.start_time, tz_name)} → {fmt_dt(r.end_time, tz_name)} · {fmt_ram(r.ram_mb)}",
+            r.id,
+        )
         for r in reservations
     ]
 
@@ -74,7 +78,8 @@ async def choose_reservation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         text = (
             f"Cancel this reservation?\n\n"
             f"{reservation.gpu.server.name} GPU{reservation.gpu.index_on_server}\n"
-            f"{fmt_dt(reservation.start_time, tz_name)} → {fmt_dt(reservation.end_time, tz_name)}"
+            f"{fmt_dt(reservation.start_time, tz_name)} → {fmt_dt(reservation.end_time, tz_name)}\n"
+            f"RAM: {fmt_ram(reservation.ram_mb)}"
         )
     await update.effective_message.reply_text(text, reply_markup=confirm_keyboard())
     return CancelStates.CONFIRM

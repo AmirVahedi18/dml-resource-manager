@@ -6,6 +6,7 @@ from dml_bot.bot.formatting import fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
+    cancel_wizard_to_admin,
     handle_back_or_cancel,
     render_paginated_step,
     show_main_menu,
@@ -39,7 +40,10 @@ async def _render_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         items = _server_items(session)
     context.user_data["_server_list_items"] = items
     page = context.user_data.get("_page", 0)
-    markup = paginated_list_keyboard(context, items, page, extra_rows=[[ADD_SERVER], [ADD_GPU]])
+    grid = context.application.bot_data["config"].list_grids.server_list
+    markup = paginated_list_keyboard(
+        context, items, page, extra_rows=[[ADD_SERVER], [ADD_GPU]], columns=grid.columns, rows=grid.rows
+    )
     text = "Servers (tap one to manage it):" if items else "No servers configured yet."
     await update.effective_message.reply_text(text, reply_markup=markup)
     return AdminServerStates.MENU
@@ -57,7 +61,9 @@ def _server_detail_actions(server: Server, gpus: list[GPU]) -> list[tuple[str, t
     actions = []
     for g in gpus:
         flag = "✅" if g.is_active else "🚫"
-        actions.append((f"{flag} GPU{g.index_on_server} · {g.model_name}", ("gpu", g.id)))
+        actions.append(
+            (f"{flag} GPU{g.index_on_server} · {g.model_name} ({fmt_ram(g.total_ram_mb)})", ("gpu", g.id))
+        )
     actions.append(("✏️ Rename Server", ("rename_server", server.id)))
     actions.append(
         ("🚫 Deactivate Server" if server.is_active else "✅ Activate Server", ("toggle_server_active", server.id))
@@ -119,7 +125,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return await _render_server_for_gpu_step(update, context)
 
     result = await handle_back_or_cancel(
-        update, context, lambda: _render_menu(update, context), lambda: cancel_wizard(update, context)
+        update, context, lambda: _render_menu(update, context), lambda: cancel_wizard_to_admin(update, context)
     )
     if result is not None:
         return result

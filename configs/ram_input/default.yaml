@@ -1,0 +1,3 @@
+# Reply-keyboard interface: unit students type for the reservation/watch RAM steps.
+# "GB" (whole gigabytes) or "MB" (whole megabytes). Stored/validated values are always MB.
+unit: GB

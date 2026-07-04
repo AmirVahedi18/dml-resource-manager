@@ -1,15 +1,11 @@
-"""Shared preset / finer-grained option generators for amount-picking screens, so every screen
-stays button-driven without needing a typed "custom value" fallback (see keyboards.preset_keyboard
-and keyboards.paginated_list_keyboard, which the "More amounts" escape hatch pages through).
+"""Shared preset generators for amount-picking screens that are still button-driven (see
+keyboards.action_keyboard) -- currently just the admin's "Add GPU" total-RAM step. The
+reservation/watch RAM steps are typed integers instead (see ram_unit_mb below).
 """
-from dml_bot.bot.formatting import fmt_ram
-
 GPU_RAM_PRESETS_MB = [8192, 16384, 24576, 40960, 81920]
-RAM_THRESHOLD_PRESETS_MB = [1024, 2048, 4096, 8192, 16384]
 
 
-def fine_ram_options(cap_mb: int, step_mb: int = 1024) -> list[tuple[str, int]]:
-    options = [(fmt_ram(mb), mb) for mb in range(step_mb, cap_mb + 1, step_mb)]
-    if not options or options[-1][1] != cap_mb:
-        options.append((fmt_ram(cap_mb), cap_mb))
-    return options
+def ram_unit_mb(unit: str) -> int:
+    """Size, in MB, of one typed-RAM-input unit -- "GB" (1024) or "MB" (1). Stored/validated
+    reservation and watch values are always MB; `unit` only controls what students type."""
+    return 1024 if unit.upper() == "GB" else 1

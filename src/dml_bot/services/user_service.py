@@ -2,6 +2,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from dml_bot.db.models.reservation import Reservation
+from dml_bot.db.models.server_access import ServerAccess
 from dml_bot.db.models.user import User
 from dml_bot.db.models.watch import WatchSubscription
 
@@ -53,10 +54,12 @@ def rename_user(session: Session, user: User, full_name: str) -> User:
 
 
 def delete_user(session: Session, user: User) -> None:
-    """Permanently deletes the user and all their reservations/watches. There's no FK cascade
-    configured at the DB level (SQLite FK enforcement isn't enabled in this project), so the
-    dependent rows are deleted explicitly here to avoid leaving orphaned rows behind."""
+    """Permanently deletes the user and all their reservations/watches/server-access grants.
+    There's no FK cascade configured at the DB level (SQLite FK enforcement isn't enabled in this
+    project), so the dependent rows are deleted explicitly here to avoid leaving orphaned rows
+    behind."""
     session.execute(delete(WatchSubscription).where(WatchSubscription.user_id == user.id))
     session.execute(delete(Reservation).where(Reservation.user_id == user.id))
+    session.execute(delete(ServerAccess).where(ServerAccess.user_id == user.id))
     session.delete(user)
     session.flush()

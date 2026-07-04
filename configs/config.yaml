@@ -7,6 +7,8 @@ defaults:
   - scheduler: default
   - webapp: default
   - schedule_chart: default
+  - ram_input: default
+  - list_grids: default
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
   - _self_

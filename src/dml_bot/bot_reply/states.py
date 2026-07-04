@@ -36,8 +36,10 @@ class AdminUserStates(IntEnum):
     MENU = auto()
     ADD_TELEGRAM_ID = auto()
     ADD_FULL_NAME = auto()
+    ADD_SERVER_ACCESS = auto()
     RENAME = auto()
     CONFIRM_DELETE = auto()
+    EDIT_SERVER_ACCESS = auto()
 
 
 class AdminServerStates(IntEnum):
@@ -67,5 +69,9 @@ class AdminUsageStates(IntEnum):
 
 
 class AdminReservationsStates(IntEnum):
+    CHOOSE_SCOPE = auto()
+    CHOOSE_USER = auto()
     CHOOSE_RESERVATION = auto()
     CONFIRM_CANCEL = auto()
+    CONFIRM_CANCEL_ALL_USER = auto()
+    TYPE_CONFIRM_CANCEL_ALL_LAB = auto()

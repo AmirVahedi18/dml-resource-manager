@@ -197,6 +197,17 @@ def cancel_reservation(session: Session, reservation: Reservation, now: datetime
     return reservation
 
 
+def cancel_reservations(
+    session: Session, reservations: list[Reservation], now: datetime | None = None
+) -> int:
+    """Bulk-cancels every reservation in `reservations` (each must already be ACTIVE). Used for the
+    admin's "cancel all for this user" / "cancel all lab-wide" actions."""
+    now = to_naive_utc(now) if now else utc_now()
+    for reservation in reservations:
+        cancel_reservation(session, reservation, now=now)
+    return len(reservations)
+
+
 def list_active_reservations_for_user(
     session: Session, user_id: int, upcoming_only: bool = True, now: datetime | None = None
 ) -> list[Reservation]:
@@ -206,6 +217,21 @@ def list_active_reservations_for_user(
     )
     if upcoming_only:
         stmt = stmt.where(Reservation.end_time > now)
+    return list(session.execute(stmt).scalars().all())
+
+
+def list_users_with_active_reservations(session: Session, now: datetime | None = None) -> list[User]:
+    """Users who currently hold at least one active, not-yet-ended reservation -- used to populate
+    the admin's "By User" reservation-browsing picker (so it doesn't list students with nothing to
+    show/cancel)."""
+    now = to_naive_utc(now) if now else utc_now()
+    stmt = (
+        select(User)
+        .join(Reservation, Reservation.user_id == User.id)
+        .where(Reservation.status == ReservationStatus.ACTIVE, Reservation.end_time > now)
+        .distinct()
+        .order_by(User.full_name)
+    )
     return list(session.execute(stmt).scalars().all())
 
 

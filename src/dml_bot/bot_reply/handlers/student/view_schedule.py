@@ -6,7 +6,7 @@ from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, Mess
 from dml_bot.bot.auth import get_active_user
 from dml_bot.bot.formatting import fmt_ram
 from dml_bot.bot_reply.choice_map import resolve_choice
-from dml_bot.bot_reply.gpu_picker import gpu_items, render_gpu_step
+from dml_bot.bot_reply.gpu_picker import accessible_server_ids_for, gpu_items, render_gpu_step
 from dml_bot.bot_reply.handlers.common import cancel_wizard, handle_back_or_cancel, show_main_menu
 from dml_bot.bot_reply.keyboards import BACK, MAIN_MENU, action_keyboard
 from dml_bot.bot_reply.ram_chart import render_ram_chart
@@ -42,10 +42,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if user is None:
             await update.effective_message.reply_text("You're not registered yet.")
             return ConversationHandler.END
-        items = gpu_items(session)
+        accessible_ids = accessible_server_ids_for(session, update.effective_user.id, user.id, context)
+        items = gpu_items(session, accessible_ids)
 
     if not items:
-        await update.effective_message.reply_text("No GPUs are configured yet.")
+        text = (
+            "No GPUs are configured yet."
+            if accessible_ids is None
+            else "You don't have access to any servers yet. Ask the lab admin to grant you access."
+        )
+        await update.effective_message.reply_text(text)
         return ConversationHandler.END
 
     context.user_data.clear()

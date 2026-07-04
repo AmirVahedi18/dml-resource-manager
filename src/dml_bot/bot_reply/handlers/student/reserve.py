@@ -10,12 +10,12 @@ from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
     handle_back_or_cancel,
     render_paginated_step,
-    resolve_preset_or_more,
     show_main_menu,
 )
-from dml_bot.bot_reply.gpu_picker import gpu_items, render_gpu_step
-from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, cancel_only_keyboard, confirm_keyboard, preset_keyboard
-from dml_bot.bot_reply.presets import fine_ram_options
+from dml_bot.bot_reply.gpu_picker import accessible_server_ids_for, gpu_items, render_gpu_step
+from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU, cancel_only_keyboard, confirm_keyboard
+from dml_bot.bot_reply.presets import ram_unit_mb
+from dml_bot.bot_reply.ram_chart import render_ram_chart
 from dml_bot.bot_reply.states import ReserveStates
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.server import Server
@@ -38,10 +38,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "You're not registered yet. Send /myid and ask the lab admin to register you."
             )
             return ConversationHandler.END
-        items = gpu_items(session)
+        accessible_ids = accessible_server_ids_for(session, update.effective_user.id, user.id, context)
+        items = gpu_items(session, accessible_ids)
 
     if not items:
-        await update.effective_message.reply_text("No GPUs are configured yet.")
+        text = (
+            "No GPUs are configured yet."
+            if accessible_ids is None
+            else "You don't have access to any servers yet. Ask the lab admin to grant you access."
+        )
+        await update.effective_message.reply_text(text)
         return ConversationHandler.END
 
     context.user_data.clear()
@@ -58,7 +64,40 @@ def _date_items(days_visible: int) -> list[tuple[str, str]]:
 
 
 async def _render_date_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await render_paginated_step(update, context, "_date_items", "Step 2/5 — choose a date:", ReserveStates.CHOOSE_DATE)
+    grid = context.application.bot_data["config"].list_grids.date
+    return await render_paginated_step(
+        update, context, "_date_items", "Step 2/5 — choose a date:", ReserveStates.CHOOSE_DATE,
+        columns=grid.columns, rows=grid.rows,
+    )
+
+
+async def _send_availability_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, gpu_id: int, days: int) -> None:
+    """Shows the same RAM-occupancy chart as 🗓 Schedule, but for a fixed range (today -> `days`
+    days ahead, matching the date-picker's visible window) rather than a range the user picks --
+    lets a student see free space on this GPU before choosing a date/time."""
+    config = context.application.bot_data["config"]
+    tz_name = config.bot.timezone
+    now = utc_now()
+    range_start, range_end = now, now + timedelta(days=days)
+
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        server = session.get(Server, gpu.server_id)
+        reservations = reservation_service.list_reservations_for_gpu(session, gpu.id, range_start, range_end)
+        chart_pages = render_ram_chart(
+            reservations,
+            gpu.total_ram_mb,
+            range_start,
+            range_end,
+            tz_name,
+            config.schedule_chart.bucket_hours,
+            config.schedule_chart.max_width_chars,
+        )
+        header = f"<b>{server.name} GPU{gpu.index_on_server}</b> — availability for the next {days} day(s)"
+
+    await update.effective_message.reply_text(header, parse_mode="HTML")
+    for page in chart_pages:
+        await update.effective_message.reply_text(f"<pre>{page}</pre>", parse_mode="HTML")
 
 
 async def choose_gpu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -79,14 +118,18 @@ async def choose_gpu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     days_visible = context.application.bot_data["config"].bot.date_picker_days_visible
     days_visible = min(days_visible, regulation.booking_horizon_days)
 
+    await _send_availability_chart(update, context, gpu_id, days_visible)
+
     context.user_data["_date_items"] = _date_items(days_visible)
     context.user_data["_page"] = 0
     return await _render_date_step(update, context)
 
 
 async def _render_time_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    grid = context.application.bot_data["config"].list_grids.start_time
     return await render_paginated_step(
-        update, context, "_time_items", "Step 3/5 — choose a start time:", ReserveStates.CHOOSE_START_TIME
+        update, context, "_time_items", "Step 3/5 — choose a start time:", ReserveStates.CHOOSE_START_TIME,
+        columns=grid.columns, rows=grid.rows,
     )
 
 
@@ -166,58 +209,62 @@ async def choose_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return await _proceed_to_ram(update, context, hours)
 
 
-def _ram_free_cap_presets(session, context: ContextTypes.DEFAULT_TYPE) -> tuple[int, int, list[tuple[str, int]]]:
+def _ram_free_cap(session, context: ContextTypes.DEFAULT_TYPE) -> tuple[int, int]:
     gpu = session.get(GPU, context.user_data["gpu_id"])
     regulation = regulation_service.get_regulation(session)
     start = datetime.fromisoformat(context.user_data["start_time"])
     end = start + timedelta(hours=context.user_data["duration_hours"])
     free_ram = reservation_service.min_free_ram_in_range(session, gpu, start, end)
     cap = min(free_ram, regulation.max_ram_per_reservation_mb)
-    presets = sorted({p for p in (cap // 4, cap // 2, cap) if p > 0})
-    return free_ram, cap, [(fmt_ram(p), p) for p in presets]
+    return free_ram, cap
 
 
-async def _render_ram_presets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def _render_ram_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with session_scope() as session:
-        free_ram, cap, presets = _ram_free_cap_presets(session, context)
+        free_ram, cap = _ram_free_cap(session, context)
     if cap <= 0:
         await update.effective_message.reply_text("No RAM is free for that window. Please try a different time.")
         return await cancel_wizard(update, context)
-    markup = preset_keyboard(context, presets)
+
+    unit = context.application.bot_data["config"].ram_input.unit
+    unit_mb = ram_unit_mb(unit)
+    max_units = cap // unit_mb
     await update.effective_message.reply_text(
-        f"Free RAM in that window: {fmt_ram(free_ram)}\nStep 5/5 — choose RAM to reserve:", reply_markup=markup
+        f"Free RAM in that window: {fmt_ram(free_ram)}\n"
+        f"Step 5/5 — send a whole number of {unit} for RAM to reserve (1-{max_units}):",
+        reply_markup=cancel_only_keyboard(),
     )
     return ReserveStates.CHOOSE_RAM
 
 
-async def _render_ram_fine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    with session_scope() as session:
-        _, cap, _ = _ram_free_cap_presets(session, context)
-    context.user_data["_ram_fine_items"] = fine_ram_options(cap)
-    return await render_paginated_step(update, context, "_ram_fine_items", "Choose RAM to reserve:", ReserveStates.CHOOSE_RAM)
-
-
 async def _proceed_to_ram(update: Update, context: ContextTypes.DEFAULT_TYPE, hours: int) -> int:
     context.user_data["duration_hours"] = hours
-    context.user_data["_ram_mode"] = "preset"
-    return await _render_ram_presets(update, context)
+    return await _render_ram_prompt(update, context)
 
 
 async def choose_ram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    state, ram_mb = await resolve_preset_or_more(
-        update,
-        context,
-        "_ram_mode",
-        lambda: _render_ram_presets(update, context),
-        lambda: _render_ram_fine(update, context),
-        lambda: _render_duration_prompt(update, context),
-    )
-    if state is not None:
-        return state
+    text = update.effective_message.text.strip()
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        return await _render_duration_prompt(update, context)
 
-    context.user_data.pop("_ram_mode", None)
-    context.user_data.pop("_page", None)
-    return await _show_confirmation(update, context, ram_mb)
+    unit = context.application.bot_data["config"].ram_input.unit
+    unit_mb = ram_unit_mb(unit)
+    with session_scope() as session:
+        _, cap = _ram_free_cap(session, context)
+    max_units = cap // unit_mb
+    try:
+        units = int(text)
+        if not (1 <= units <= max_units):
+            raise ValueError
+    except ValueError:
+        await update.effective_message.reply_text(
+            f"Please send a whole number of {unit} from 1 to {max_units}."
+        )
+        return ReserveStates.CHOOSE_RAM
+
+    return await _show_confirmation(update, context, units * unit_mb)
 
 
 async def _show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, ram_mb: int) -> int:
@@ -249,9 +296,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if text == MAIN_MENU:
         return await cancel_wizard(update, context)
     if text == BACK:
-        context.user_data["_ram_mode"] = "preset"
-        context.user_data.pop("_page", None)
-        return await _render_ram_presets(update, context)
+        return await _render_ram_prompt(update, context)
     if text != CONFIRM:
         await update.effective_message.reply_text("Please use one of the buttons below.")
         return ReserveStates.CONFIRM

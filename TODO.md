@@ -14,8 +14,6 @@ rough sequencing guide, not a commitment.
 - **Structured JSON logging.** v1 uses plain rotating text logs. A JSON-line format would make
   logs easier to grep/parse programmatically or feed into a future dashboard, at the cost of
   human readability of the raw files.
-- **GitHub Actions CI.** Run `pytest` automatically on push/PR. Out of scope for v1 since it
-  wasn't requested and doesn't affect the bot's architecture.
 
 ## v2.0 — auth & admin scaling
 

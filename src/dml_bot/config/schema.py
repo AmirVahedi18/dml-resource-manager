@@ -50,12 +50,40 @@ class WebappConfig:
 
 
 @dataclass
+class RamInputConfig:
+    # Unit typed by students for the reservation/watch RAM steps: "GB" (whole gigabytes) or "MB"
+    # (whole megabytes). Purely a display/input convenience -- stored values are always MB.
+    unit: str = "GB"
+
+
+@dataclass
 class ScheduleChartConfig:
     bucket_hours: float = 2.0
     max_width_chars: int = 30
     # "View Schedule" date-range choices, in days (besides the always-present "Today"); any
     # option exceeding the regulation's booking horizon is hidden.
     range_days_options: list[int] = field(default_factory=lambda: [3, 5, 7, 10, 14])
+
+
+@dataclass
+class GridConfig:
+    # How many buttons per row (columns) and how many rows are shown per page for a given
+    # paginated list screen. page_size = columns * rows; columns=1 is the original one-button-
+    # per-row layout.
+    columns: int = 1
+    rows: int = 6
+
+
+@dataclass
+class ListGridsConfig:
+    # Per-screen button-grid dimensions for the reply_keyboard interface's paginated list
+    # screens. Screens not listed here (GPU list, reservation list, watch list) keep the
+    # original one-column layout and aren't configurable through this group.
+    start_time: GridConfig = field(default_factory=lambda: GridConfig(columns=4, rows=6))
+    date: GridConfig = field(default_factory=lambda: GridConfig(columns=4, rows=6))
+    user_list: GridConfig = field(default_factory=lambda: GridConfig(columns=2, rows=6))
+    server_list: GridConfig = field(default_factory=lambda: GridConfig(columns=2, rows=6))
+    admin_menu: GridConfig = field(default_factory=lambda: GridConfig(columns=3, rows=2))
 
 
 @dataclass
@@ -68,6 +96,8 @@ class AppConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     webapp: WebappConfig = field(default_factory=WebappConfig)
     schedule_chart: ScheduleChartConfig = field(default_factory=ScheduleChartConfig)
+    ram_input: RamInputConfig = field(default_factory=RamInputConfig)
+    list_grids: ListGridsConfig = field(default_factory=ListGridsConfig)
 
 
 def register_configs() -> None:

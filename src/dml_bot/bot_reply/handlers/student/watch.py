@@ -4,14 +4,12 @@ from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from dml_bot.bot.auth import get_active_user
-from dml_bot.bot.formatting import fmt_ram, watch_summary
+from dml_bot.bot.formatting import watch_summary
 from dml_bot.bot_reply.choice_map import resolve_choice
-from dml_bot.bot_reply.gpu_picker import gpu_items, render_gpu_step
+from dml_bot.bot_reply.gpu_picker import accessible_server_ids_for, gpu_items, render_gpu_step
 from dml_bot.bot_reply.handlers.common import (
     cancel_wizard,
     handle_back_or_cancel,
-    render_paginated_step,
-    resolve_preset_or_more,
     show_main_menu,
 )
 from dml_bot.bot_reply.keyboards import (
@@ -19,11 +17,11 @@ from dml_bot.bot_reply.keyboards import (
     CONFIRM,
     MAIN_MENU,
     action_keyboard,
+    cancel_only_keyboard,
     confirm_keyboard,
     paginated_list_keyboard,
-    preset_keyboard,
 )
-from dml_bot.bot_reply.presets import RAM_THRESHOLD_PRESETS_MB, fine_ram_options
+from dml_bot.bot_reply.presets import ram_unit_mb
 from dml_bot.bot_reply.states import WatchFlowStates
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.watch import WatchSubscription
@@ -67,9 +65,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def new_watch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with session_scope() as session:
-        items = gpu_items(session)
+        user = get_active_user(session, update.effective_user.id)
+        accessible_ids = accessible_server_ids_for(session, update.effective_user.id, user.id, context)
+        items = gpu_items(session, accessible_ids)
     if not items:
-        await update.effective_message.reply_text("No GPUs are configured yet.")
+        text = (
+            "No GPUs are configured yet."
+            if accessible_ids is None
+            else "You don't have access to any servers yet. Ask the lab admin to grant you access."
+        )
+        await update.effective_message.reply_text(text)
         return ConversationHandler.END
     context.user_data["_gpu_items"] = items
     context.user_data["_page"] = 0
@@ -174,36 +179,44 @@ async def choose_range(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     context.user_data["range_start"] = range_start.isoformat()
     context.user_data["range_end"] = range_end.isoformat()
-    context.user_data["_ram_mode"] = "preset"
-    return await _render_ram_presets(update, context)
+    return await _render_ram_prompt(update, context)
 
 
-async def _render_ram_presets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    markup = preset_keyboard(context, [(fmt_ram(mb), mb) for mb in RAM_THRESHOLD_PRESETS_MB])
-    await update.effective_message.reply_text("Choose the minimum RAM you need to be notified about:", reply_markup=markup)
+async def _render_ram_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    with session_scope() as session:
+        gpu = session.get(GPU, context.user_data["gpu_id"])
+    unit = context.application.bot_data["config"].ram_input.unit
+    unit_mb = ram_unit_mb(unit)
+    max_units = gpu.total_ram_mb // unit_mb
+    await update.effective_message.reply_text(
+        f"Send a whole number of {unit} for the minimum RAM you need to be notified about (1-{max_units}):",
+        reply_markup=cancel_only_keyboard(),
+    )
     return WatchFlowStates.CHOOSE_RAM
 
 
-async def _render_ram_fine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def choose_ram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.effective_message.text.strip()
+    if text == MAIN_MENU:
+        return await cancel_wizard(update, context)
+    if text == BACK:
+        return await _render_range_step(update, context)
+
+    unit = context.application.bot_data["config"].ram_input.unit
+    unit_mb = ram_unit_mb(unit)
     with session_scope() as session:
         gpu = session.get(GPU, context.user_data["gpu_id"])
-    context.user_data["_ram_fine_items"] = fine_ram_options(gpu.total_ram_mb)
-    return await render_paginated_step(
-        update, context, "_ram_fine_items", "Choose the minimum RAM:", WatchFlowStates.CHOOSE_RAM
-    )
-
-
-async def choose_ram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    state, ram_mb = await resolve_preset_or_more(
-        update,
-        context,
-        "_ram_mode",
-        lambda: _render_ram_presets(update, context),
-        lambda: _render_ram_fine(update, context),
-        lambda: _render_range_step(update, context),
-    )
-    if state is not None:
-        return state
+    max_units = gpu.total_ram_mb // unit_mb
+    try:
+        units = int(text)
+        if not (1 <= units <= max_units):
+            raise ValueError
+    except ValueError:
+        await update.effective_message.reply_text(
+            f"Please send a whole number of {unit} from 1 to {max_units}."
+        )
+        return WatchFlowStates.CHOOSE_RAM
+    ram_mb = units * unit_mb
 
     with session_scope() as session:
         user = get_active_user(session, update.effective_user.id)

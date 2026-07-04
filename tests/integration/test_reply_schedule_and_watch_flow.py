@@ -72,8 +72,7 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
     state = await watch_handlers.choose_range(update, context)
     assert state == WatchFlowStates.CHOOSE_RAM
 
-    assert "2 GB" in context.user_data["_choices"]
-    update = make_text_update(5, telegram_id, "2 GB", bot)
+    update = make_text_update(5, telegram_id, "2", bot)
     state = await watch_handlers.choose_ram(update, context)
     assert state == ConversationHandler.END
 
@@ -99,3 +98,27 @@ async def test_watch_created_then_listed_and_cancelled(lab_setup):
     with session_scope() as session:
         user = user_service.get_user_by_telegram_id(session, telegram_id)
         assert watch_service.list_watches_for_user(session, user.id) == []
+
+
+async def test_watch_ram_rejects_non_integer_and_out_of_range(lab_setup):
+    telegram_id = lab_setup["telegram_id"]
+    bot = FakeBot()
+    context = make_context()
+
+    await watch_handlers.start(make_text_update(1, telegram_id, watch_handlers.MENU_BUTTON, bot), context)
+    await watch_handlers.menu_choice(make_text_update(2, telegram_id, watch_handlers.NEW_WATCH, bot), context)
+    gpu_label = _first_choice_label(context)
+    await watch_handlers.choose_gpu(make_text_update(3, telegram_id, gpu_label, bot), context)
+    await watch_handlers.choose_range(make_text_update(4, telegram_id, "This week", bot), context)
+
+    # non-integer text
+    state = await watch_handlers.choose_ram(make_text_update(5, telegram_id, "lots", bot), context)
+    assert state == WatchFlowStates.CHOOSE_RAM
+
+    # the GPU has 40GB total -- 999 is way over
+    state = await watch_handlers.choose_ram(make_text_update(6, telegram_id, "999", bot), context)
+    assert state == WatchFlowStates.CHOOSE_RAM
+
+    # zero is below the 1-unit minimum
+    state = await watch_handlers.choose_ram(make_text_update(7, telegram_id, "0", bot), context)
+    assert state == WatchFlowStates.CHOOSE_RAM

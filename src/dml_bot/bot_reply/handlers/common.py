@@ -3,12 +3,11 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from dml_bot.bot.auth import get_active_user, is_admin
 from dml_bot.bot.handlers.common import myid_command  # noqa: F401 -- interface-agnostic, reused as-is
-from dml_bot.bot_reply.choice_map import resolve_choice
 from dml_bot.bot_reply.keyboards import (
     BACK,
     MAIN_MENU,
-    MORE_AMOUNTS,
     NEXT_PAGE,
+    PAGE_SIZE,
     PREV_PAGE,
     admin_menu_keyboard,
     main_menu_keyboard,
@@ -16,18 +15,75 @@ from dml_bot.bot_reply.keyboards import (
 )
 from dml_bot.db.session import session_scope
 
-HELP_TEXT = (
-    "<b>DML Resource Manager</b>\n\n"
-    "Use the buttons below to reserve a GPU, check the schedule, or manage your "
-    "reservations and watches. You must follow the time slots you reserve — this is "
-    "lab policy.\n\n"
-    "Not registered yet? Send /myid and give that number to the lab admin."
+HELP_TEXT_STUDENT = (
+    "<b>DML Resource Manager — Help</b>\n\n"
+    "Every screen shows buttons below the message box — tap one instead of typing free text, "
+    "except where a step explicitly asks you to type a number or value. Two buttons appear on "
+    "almost every screen:\n"
+    "• ◀ Back — goes back exactly one screen (not all the way to the start).\n"
+    "• 🏠 Main Menu — exits whatever you're doing and returns to the main menu, from anywhere.\n\n"
+    "Not registered yet? Send /myid and give that number to the lab admin so they can add you.\n\n"
+    "<b>📅 Reserve GPU</b> — book a GPU for a future time slot:\n"
+    "1. Step 1/5 — pick a GPU from the list (only servers the admin gave you access to are shown).\n"
+    "2. Step 2/5 — pick a date.\n"
+    "3. Step 3/5 — pick a start time on that date.\n"
+    "4. Step 4/5 — type a whole number of hours for the duration (capped by lab regulation).\n"
+    "5. Step 5/5 — type a whole number (in the configured unit, e.g. GB) for the RAM you need, "
+    "capped by how much is actually free on that GPU during your window and by the lab's "
+    "per-reservation RAM limit.\n"
+    "6. Review the summary and tap ✅ Confirm to book it, or ◀ Back to change the RAM/duration.\n\n"
+    "<b>🗂 My Reservations</b> — cancel a reservation you made:\n"
+    "1. Pick a reservation from the list (shows GPU, start → end time, and RAM).\n"
+    "2. Review the details and tap ✅ Confirm to cancel it, or ◀ Back to pick a different one.\n\n"
+    "<b>🗓 Schedule</b> — see how busy a GPU is:\n"
+    "1. Step 1/2 — pick a GPU.\n"
+    "2. Step 2/2 — pick a date range (Today, or a day-count preset, limited by the booking "
+    "horizon).\n"
+    "3. You get a text chart of RAM usage over that range, plus a list of the reservations in it.\n\n"
+    "<b>🔔 Watches</b> — get notified when enough RAM frees up on a GPU:\n"
+    "1. Your active watches are listed (tap one to cancel it), alongside ➕ New Watch.\n"
+    "2. New Watch: pick a GPU, then a date range to watch, then type the minimum RAM you need "
+    "freed.\n"
+    "3. You'll get a message here as soon as that much RAM becomes free in that range."
+)
+
+HELP_TEXT_ADMIN = (
+    "<b>🛠 Admin Panel</b> — additional options only admins see:\n\n"
+    "<b>👤 Manage Users</b>:\n"
+    "1. See all registered students (✅ active/🚫 inactive, ⭐ = multi-GPU privilege), or tap "
+    "➕ Add User.\n"
+    "2. Add User: send the student's Telegram numeric ID (from their /myid), then their full "
+    "name, then pick at least one server to grant them access to.\n"
+    "3. Tap a student to see actions: ✅/🚫 activate/deactivate, ⭐ grant/revoke multi-GPU, "
+    "✏️ rename, 🔐 edit server access, 🗑 permanently remove (with confirmation).\n\n"
+    "<b>🖥 Manage Servers</b>:\n"
+    "1. See all servers, or ➕ Add Server / ➕ Add GPU.\n"
+    "2. Add Server: type a name. Add GPU: pick the server, type its index, model name, then pick "
+    "a preset RAM size or ✏️ Other to type a custom MB value.\n"
+    "3. Tap a server to rename/deactivate/activate/delete it (with confirmation), or tap one of "
+    "its GPUs to rename/deactivate/activate/delete that GPU.\n\n"
+    "<b>⚖️ Regulation</b>: tap a field (max RAM per reservation, max duration, booking horizon, "
+    "time slot size, max active reservations per user) and type its new value.\n\n"
+    "<b>📊 Usage Report</b>: pick 👤 By User or 🖥 By GPU, then a date range preset, to get a bar "
+    "chart of usage.\n\n"
+    "<b>📋 All Reservations</b>:\n"
+    "1. Pick 🗂 All Reservations (lab-wide) or 👤 By User (only students with upcoming "
+    "reservations).\n"
+    "2. Tap one reservation to cancel it, or use 🗑 Cancel All (this user) / 🗑 Cancel ALL "
+    "Reservations for bulk cancellation — the lab-wide bulk cancel additionally requires typing "
+    "CANCEL ALL to confirm.\n"
+    "3. Any student whose reservation you cancel gets notified automatically."
 )
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Main menu:") -> None:
     admin = is_admin(update.effective_user.id, context)
     await update.effective_message.reply_text(text, reply_markup=main_menu_keyboard(admin))
+
+
+async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Admin panel:") -> None:
+    columns = context.application.bot_data["config"].list_grids.admin_menu.columns
+    await update.effective_message.reply_text(text, reply_markup=admin_menu_keyboard(columns))
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -43,14 +99,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.effective_message.reply_text(HELP_TEXT, parse_mode="HTML")
+    await update.effective_message.reply_text(HELP_TEXT_STUDENT, parse_mode="HTML")
+    if is_admin(update.effective_user.id, context):
+        await update.effective_message.reply_text(HELP_TEXT_ADMIN, parse_mode="HTML")
 
 
 async def admin_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id, context):
         await update.effective_message.reply_text("⛔ Admins only.")
         return
-    await update.effective_message.reply_text("Admin panel:", reply_markup=admin_menu_keyboard())
+    await show_admin_menu(update, context)
 
 
 async def back_to_main_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,6 +118,14 @@ async def back_to_main_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await show_main_menu(update, context, "Cancelled.")
+    return ConversationHandler.END
+
+
+async def cancel_wizard_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Like `cancel_wizard`, but for a Back press on an admin sub-flow's first screen -- steps
+    back to the 🛠 Admin Panel menu (one level up) instead of all the way out to the Main Menu."""
+    context.user_data.clear()
+    await show_admin_menu(update, context)
     return ConversationHandler.END
 
 
@@ -94,52 +160,22 @@ async def handle_back_or_cancel(
     return None
 
 
-async def render_paginated_step(update: Update, context: ContextTypes.DEFAULT_TYPE, items_key: str, prompt: str, state: int) -> int:
-    """Sends the keyboard for `context.user_data[items_key]` at the current page, for a plain
-    (non-preset) paginated list step. Callers store the full item list under `items_key` once,
-    then call this to (re-)render whichever page is current."""
-    items = context.user_data[items_key]
-    page = context.user_data.get("_page", 0)
-    markup = paginated_list_keyboard(context, items, page)
-    await update.effective_message.reply_text(prompt, reply_markup=markup)
-    return state
-
-
-async def resolve_preset_or_more(
+async def render_paginated_step(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    mode_key: str,
-    render_preset,
-    render_fine,
-    back_render,
-):
-    """Shared control flow for a preset-buttons screen with a "More amounts" escape hatch into a
-    paginated finer-grained list (keyboards.preset_keyboard / paginated_list_keyboard). Returns
-    `(state, value)`: if `state` is not None the caller should return it immediately (a fresh
-    screen render or a retry prompt); otherwise `value` is the resolved choice. `back_render` is
-    only used for Back pressed from the *preset* screen (the previous wizard step) -- Back from
-    the "fine" sub-list just drops back to presets, since that's a step within this same screen,
-    not the previous wizard step."""
-    text = update.effective_message.text
-    mode = context.user_data.get(mode_key, "preset")
-
-    if mode == "preset" and text == MORE_AMOUNTS:
-        context.user_data[mode_key] = "fine"
-        context.user_data["_page"] = 0
-        return await render_fine(), None
-
-    if mode == "fine" and text == BACK:
-        context.user_data[mode_key] = "preset"
-        context.user_data.pop("_page", None)
-        return await render_preset(), None
-
-    render_current = render_preset if mode == "preset" else render_fine
-    paged = await handle_back_or_cancel(update, context, render_current, back_render)
-    if paged is not None:
-        return paged, None
-
-    value = resolve_choice(context, text)
-    if value is None:
-        await update.effective_message.reply_text("Please use one of the buttons below.")
-        return await render_current(), None
-    return None, value
+    items_key: str,
+    prompt: str,
+    state: int,
+    *,
+    columns: int = 1,
+    rows: int = PAGE_SIZE,
+) -> int:
+    """Sends the keyboard for `context.user_data[items_key]` at the current page, for a plain
+    (non-preset) paginated list step. Callers store the full item list under `items_key` once,
+    then call this to (re-)render whichever page is current. `columns`/`rows` control the grid
+    layout (see keyboards.paginated_list_keyboard); default is the original one-per-row list."""
+    items = context.user_data[items_key]
+    page = context.user_data.get("_page", 0)
+    markup = paginated_list_keyboard(context, items, page, columns=columns, rows=rows)
+    await update.effective_message.reply_text(prompt, reply_markup=markup)
+    return state

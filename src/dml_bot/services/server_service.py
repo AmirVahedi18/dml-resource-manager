@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.reservation import Reservation
 from dml_bot.db.models.server import Server
+from dml_bot.db.models.server_access import ServerAccess
 from dml_bot.db.models.watch import WatchSubscription
 
 
@@ -85,13 +86,15 @@ def _delete_gpu_dependents(session: Session, gpu_id: int) -> None:
 
 
 def delete_server(session: Session, server: Server) -> None:
-    """Permanently deletes the server, its GPUs, and all their reservations/watches. There's no
-    FK cascade configured at the DB level (SQLite FK enforcement isn't enabled in this project),
-    so dependent rows are deleted explicitly to avoid leaving orphaned rows behind."""
+    """Permanently deletes the server, its GPUs, all their reservations/watches, and any student
+    server-access grants pointing at it. There's no FK cascade configured at the DB level (SQLite
+    FK enforcement isn't enabled in this project), so dependent rows are deleted explicitly to
+    avoid leaving orphaned rows behind."""
     gpus = list_gpus(session, server, active_only=False)
     for gpu in gpus:
         _delete_gpu_dependents(session, gpu.id)
         session.delete(gpu)
+    session.execute(delete(ServerAccess).where(ServerAccess.server_id == server.id))
     session.delete(server)
     session.flush()
 

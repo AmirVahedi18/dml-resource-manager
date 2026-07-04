@@ -147,24 +147,84 @@ interface: webapp   # or: legacy, or: reply_keyboard
   reply keyboard (`src/dml_bot/bot_reply/`): a flat grid of buttons docked below the message box,
   rather than buttons attached to individual messages. Every list-selection screen (GPUs, dates,
   reservations, users, ...) that could exceed one screen is paginated with ◀ Prev / ▶ Next
-  controls; the RAM preset step offers a "▶ More amounts" tier for finer-grained values instead of
-  a typed "custom" fallback. Reservation duration is entered as a typed whole number of hours
-  (validated against the regulation's max duration) rather than picking from preset buttons, since
-  an arbitrary integer has no natural bounded button set. Every other typed input is genuinely
-  free-form data with no bounded set of choices (a new user's Telegram ID and name, a new
-  server/GPU's name, a regulation field's new value), exactly as in `legacy`. Same startup
-  requirements as `legacy` (no `WEBAPP_PUBLIC_URL`, menu button reset to default).
+  controls. Reservation duration and RAM, and a watch's minimum-RAM threshold, are all entered as
+  typed whole numbers (validated against the regulation's limits / the GPU's free or total RAM)
+  rather than picking from preset buttons, since an arbitrary integer has no natural bounded button
+  set. The RAM unit students type in (whole GB by default, or MB) is configurable via
+  `ram_input.unit` in `configs/ram_input/default.yaml` — stored/validated values are always MB
+  regardless of the configured input unit. Every other typed input is genuinely free-form data with
+  no bounded set of choices (a new user's Telegram ID and name, a new server/GPU's name, a
+  regulation field's new value), exactly as in `legacy`. Same startup requirements as `legacy` (no
+  `WEBAPP_PUBLIC_URL`, menu button reset to default).
+
+  Right after Step 1/5 (choosing a GPU) in **Reserve GPU**, the bot automatically sends that GPU's
+  RAM-occupancy chart (the same renderer as 🗓 Schedule) for today through `bot.date_picker_days_visible`
+  days ahead — the same window the next step's date-picker offers — so a student can see free space
+  before picking a date/time, with no extra tap required. It reuses `bot.date_picker_days_visible`
+  (capped by the regulation's booking horizon, `configs/config.yaml`'s `bot:` group) for the day
+  count and `schedule_chart.bucket_hours`/`schedule_chart.max_width_chars` for the chart's
+  resolution/width — no separate config was added for this.
+
+  **❓ Help** (`/help` or the main-menu button) sends a full step-by-step walkthrough of every
+  student option (Reserve GPU, My Reservations, Schedule, Watches) in one message
+  (`HELP_TEXT_STUDENT` in `src/dml_bot/bot_reply/handlers/common.py`). If the requester is an
+  admin, a second message follows covering every Admin Panel option (Manage Users, Manage Servers,
+  Regulation, Usage Report, All Reservations) in the same step-by-step style
+  (`HELP_TEXT_ADMIN`) — students never see the admin message.
 
   Every wizard screen has a **◀ Back** button that steps back exactly one screen (re-showing the
   previous step, not the wizard's first screen), plus a separate **🏠 Main Menu** button that exits
-  to the main menu instantly from any depth. Pressing ◀ Back on a wizard's first screen also exits,
-  since there's nothing earlier to step back to.
+  to the main menu instantly from any depth. Pressing ◀ Back on a student wizard's first screen
+  exits to the main menu, since there's nothing earlier to step back to. The five admin sub-flows
+  (Manage Users, Manage Servers, Regulation, Usage Report, All Reservations) sit one level deeper,
+  behind **🛠 Admin Panel** — pressing ◀ Back on *their* first screen steps back up to the Admin
+  Panel menu instead, consistent with the "one screen at a time" rule; 🏠 Main Menu still exits all
+  the way out from any of these screens.
 
   The admin panel's **Manage Users** and **Manage Servers** screens support renaming and permanently
   deleting users, servers, and GPUs (each behind a confirmation step) in addition to the existing
   activate/deactivate toggle. Deleting a user/server/GPU also deletes its reservations and watch
   subscriptions, since this project doesn't enable SQLite FK cascade — those dependent rows are
   removed explicitly in `user_service`/`server_service` to avoid leaving orphaned rows behind.
+
+  **All Reservations** starts with a scope choice: **🗂 All Reservations** (every upcoming
+  reservation lab-wide, as before) or **👤 By User** (a picker listing only students who currently
+  hold at least one upcoming reservation, then that student's reservations only). Either list adds
+  a bulk-cancel button on top of the existing "tap one reservation to cancel it" behavior:
+  **🗑 Cancel All (this user)** in the by-user view uses the same Confirm/Back step as a single
+  cancellation, while **🗑 Cancel ALL Reservations** in the all-reservations view additionally
+  requires typing the phrase `CANCEL ALL` (case-insensitive) given its much larger blast radius —
+  ◀ Back at that prompt backs out without cancelling anything. Whenever an admin cancels a
+  reservation from this screen — one at a time, all of one student's, or all lab-wide — the
+  affected student gets a Telegram DM for each individual reservation cancelled, so a bulk cancel
+  sends one message per reservation rather than a single combined summary.
+
+  **Per-server access control**: admins implicitly have access to every server; students only see
+  and can reserve/watch GPUs on servers an admin has explicitly granted them (`server_access`
+  table, `src/dml_bot/services/server_access_service.py`). Access is opt-in and per-student, not
+  inherited from anywhere else:
+  - When adding a student (**➕ Add User**), picking at least one accessible server is a required
+    step before the account is created.
+  - A student added before this feature shipped, or a server created afterward, grants nobody
+    access by default — an admin must explicitly check it off.
+  - An existing student's access can be changed any time from **Manage Users → (select student) →
+    🔐 Server Access**, a checklist of every server toggled on/off, applied on **✅ Done**.
+  - A student with no granted servers sees "You don't have access to any servers yet" instead of a
+    GPU list when they try to reserve, watch, or view a schedule.
+  - This restriction currently applies only to the `reply_keyboard` interface — the `legacy` and
+    `webapp` interfaces are unaffected and still list every server's GPUs to every registered user.
+
+  **Button grid layout**: most paginated list screens show one button per row with ◀ Prev / ▶ Next
+  controls once the list overflows a page, same as always. Four screens instead lay their page out
+  as a multi-column grid (still paginating with ◀ Prev / ▶ Next if there are more items than fit on
+  one page) — the reservation date and start-time pickers (4 columns), and the admin's user and
+  server lists (2 columns). The 🛠 Admin Panel menu itself (its 5 options — Manage Users, Manage
+  Servers, Regulation, Usage Report, All Reservations) is also a grid (3 columns); it's a small
+  fixed list rather than a paginated one, so it only has a `columns` setting, no `rows`/pagination.
+  Column/row counts per screen are configurable in `configs/list_grids/default.yaml`
+  (`start_time`, `date`, `user_list`, `server_list`, each with a `columns`/`rows` pair; page size is
+  `columns * rows`; `admin_menu` has just `columns`). The GPU list, reservation lists, and the watch
+  list are unaffected and always stay one button per row.
 
   "View Schedule" offers a configurable set of date ranges — always "Today", plus a list of day-counts
   (default `[3, 5, 7, 10, 14]`, configurable via `schedule_chart.range_days_options`) with any option
@@ -190,9 +250,6 @@ interface: webapp   # or: legacy, or: reply_keyboard
   The display timezone (`bot.timezone`) can be overridden without touching `configs/` by setting `TZ`
   in `.env` (e.g. `TZ=Asia/Tehran`) — if set, it takes precedence over `configs/bot/default.yaml`.
 
-  The display timezone (`bot.timezone`) can be overridden without touching `configs/` by setting
-  `TZ` in `.env` (e.g. `TZ=Asia/Tehran`) — if set, it takes precedence over `configs/bot/default.yaml`.
-
 You can also override it from the command line without editing the file:
 `python main.py interface=legacy`.
 
@@ -202,7 +259,9 @@ The bot does not connect to any lab directory service, so registration is manual
 
 1. The student sends `/myid` to the bot, which replies with their numeric Telegram ID.
 2. The student gives that ID (and their name) to the lab admin.
-3. The admin opens **🛠 Admin Panel → 👤 Manage Users → ➕ Add User** and enters the ID and name.
+3. The admin opens **🛠 Admin Panel → 👤 Manage Users → ➕ Add User**, enters the ID and name, then
+   (on the `reply_keyboard` interface) picks which server(s) the student may use — at least one is
+   required to finish adding them.
 
 The student can now use `/start` to access the full menu.
 

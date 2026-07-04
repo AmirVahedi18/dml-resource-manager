@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from dml_bot.api.app import build_api_app
 from dml_bot.config.schema import AppConfig
 from dml_bot.db.session import dispose_engine, init_engine, session_scope
-from dml_bot.services import regulation_service, server_service, user_service
+from dml_bot.services import regulation_service, server_access_service, server_service, user_service
 from tests.webapp_signing import sign_init_data
 
 BOT_TOKEN = "123456:test-bot-token"
@@ -20,6 +20,7 @@ def lab_setup():
         gpu = server_service.add_gpu(session, server, 0, "A100", 40960)
         regulation_service.ensure_seeded(session, AppConfig().regulation)
         user = user_service.register_user(session, telegram_id=555, full_name="Alice")
+        server_access_service.set_access(session, user.id, {server.id})
         ids = {"server_id": server.id, "gpu_id": gpu.id, "telegram_id": user.telegram_id}
     yield ids
     dispose_engine()

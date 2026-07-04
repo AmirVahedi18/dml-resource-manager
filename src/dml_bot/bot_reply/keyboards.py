@@ -12,8 +12,8 @@ MAIN_MENU = "🏠 Main Menu"
 BACK_TO_MAIN = "⬅️ Back to menu"
 PREV_PAGE = "◀ Prev"
 NEXT_PAGE = "Next ▶"
-MORE_AMOUNTS = "▶ More amounts"
 CONFIRM = "✅ Confirm"
+DONE = "✅ Done"
 HELP = "❓ Help"
 ADMIN_PANEL = "🛠 Admin Panel"
 
@@ -46,17 +46,10 @@ def main_menu_keyboard(is_admin: bool) -> ReplyKeyboardMarkup:
     return _markup(rows)
 
 
-def admin_menu_keyboard() -> ReplyKeyboardMarkup:
-    return _markup(
-        [
-            ["👤 Manage Users"],
-            ["🖥 Manage Servers"],
-            ["⚖️ Regulation"],
-            ["📊 Usage Report"],
-            ["📋 All Reservations"],
-            [BACK_TO_MAIN],
-        ]
-    )
+def admin_menu_keyboard(columns: int = 1) -> ReplyKeyboardMarkup:
+    items = ["👤 Manage Users", "🖥 Manage Servers", "⚖️ Regulation", "📊 Usage Report", "📋 All Reservations"]
+    item_rows = [items[i : i + columns] for i in range(0, len(items), columns)]
+    return _markup([*item_rows, [BACK_TO_MAIN]])
 
 
 def paginated_list_keyboard(
@@ -65,27 +58,35 @@ def paginated_list_keyboard(
     page: int,
     *,
     extra_rows: list[list[str]] | None = None,
+    columns: int = 1,
+    rows: int = PAGE_SIZE,
 ) -> ReplyKeyboardMarkup:
-    """`items` is (label, value) pairs for the full list; only one page's worth is shown at a
-    time. Stores the choice map for the visible page's labels only."""
-    start = page * PAGE_SIZE
-    page_items = items[start : start + PAGE_SIZE]
+    """`items` is (label, value) pairs for the full list; only one page's worth (`columns * rows`
+    items) is shown at a time, laid out `columns`-wide per row -- `columns=1` (the default) is the
+    original one-button-per-row layout; screens with many short labels (start times, dates, ...)
+    pass a larger `columns` to fit more per screen without wasting vertical space. Stores the
+    choice map for the visible page's labels only."""
+    page_size = columns * rows
+    start = page * page_size
+    page_items = items[start : start + page_size]
 
-    rows = [[label] for label, _ in page_items]
+    button_rows = [
+        [label for label, _ in page_items[i : i + columns]] for i in range(0, len(page_items), columns)
+    ]
     for extra in extra_rows or []:
-        rows.append(extra)
+        button_rows.append(extra)
 
     page_controls = []
     if page > 0:
         page_controls.append(PREV_PAGE)
-    if start + PAGE_SIZE < len(items):
+    if start + page_size < len(items):
         page_controls.append(NEXT_PAGE)
     if page_controls:
-        rows.append(page_controls)
-    rows.append(_NAV_ROW)
+        button_rows.append(page_controls)
+    button_rows.append(_NAV_ROW)
 
     store_choices(context, {label: value for label, value in page_items})
-    return _markup(rows)
+    return _markup(button_rows)
 
 
 def action_keyboard(context: ContextTypes.DEFAULT_TYPE, actions: list[tuple[str, object]]) -> ReplyKeyboardMarkup:
@@ -98,12 +99,20 @@ def action_keyboard(context: ContextTypes.DEFAULT_TYPE, actions: list[tuple[str,
     return _markup(rows)
 
 
-def preset_keyboard(context: ContextTypes.DEFAULT_TYPE, presets: list[tuple[str, object]]) -> ReplyKeyboardMarkup:
-    """A short, non-paginated list of preset choices plus a "More amounts" escape hatch into a
-    finer-grained paginated list (see paginated_list_keyboard) -- keeps preset screens 100%
-    button-driven without needing a typed "custom value" fallback."""
-    rows = [[label] for label, _ in presets]
-    rows.append([MORE_AMOUNTS])
+def toggle_list_keyboard(
+    context: ContextTypes.DEFAULT_TYPE, items: list[tuple[str, object]], selected: set
+) -> ReplyKeyboardMarkup:
+    """A fixed list of checkbox-style toggle buttons (each label prefixed with its ✅/⬜ state)
+    plus a Done button -- for "pick any number of these" screens like a student's server-access
+    grants. Each press re-renders this same screen with the toggle flipped; Done finalizes."""
+    rows = []
+    choice_map = {}
+    for label, value in items:
+        mark = "✅" if value in selected else "⬜"
+        button_label = f"{mark} {label}"
+        rows.append([button_label])
+        choice_map[button_label] = value
+    rows.append([DONE])
     rows.append(_NAV_ROW)
-    store_choices(context, {label: value for label, value in presets})
+    store_choices(context, choice_map)
     return _markup(rows)

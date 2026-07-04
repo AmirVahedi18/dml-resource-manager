@@ -9,7 +9,7 @@ from dml_bot.bot_reply.handlers.admin import (
     reservations_admin,
     usage_report,
 )
-from dml_bot.bot_reply.keyboards import BACK, CONFIRM, MAIN_MENU
+from dml_bot.bot_reply.keyboards import BACK, BACK_TO_MAIN, CONFIRM, DONE, MAIN_MENU
 from dml_bot.bot_reply.states import (
     AdminRegulationStates,
     AdminReservationsStates,
@@ -20,7 +20,13 @@ from dml_bot.bot_reply.states import (
 from dml_bot.db.models.gpu import GPU
 from dml_bot.db.models.server import Server
 from dml_bot.db.session import session_scope
-from dml_bot.services import regulation_service, reservation_service, server_service, user_service
+from dml_bot.services import (
+    regulation_service,
+    reservation_service,
+    server_access_service,
+    server_service,
+    user_service,
+)
 from dml_bot.utils.time_utils import floor_to_slot, utc_now
 from tests.integration.telegram_helpers import FakeBot, make_context, make_text_update
 
@@ -49,12 +55,93 @@ async def test_admin_add_user_flow(lab_setup):
 
     update = make_text_update(4, ADMIN_TELEGRAM_ID, "Charlie", bot)
     state = await manage_users.receive_full_name(update, context)
+    assert state == AdminUserStates.ADD_SERVER_ACCESS
+
+    server_label = _first_choice_label(context)
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, server_label, bot)
+    state = await manage_users.choose_new_user_access(update, context)
+    assert state == AdminUserStates.ADD_SERVER_ACCESS  # toggled on, screen re-rendered
+
+    update = make_text_update(6, ADMIN_TELEGRAM_ID, DONE, bot)
+    state = await manage_users.choose_new_user_access(update, context)
     assert state == ConversationHandler.END
 
     with session_scope() as session:
         new_user = user_service.get_user_by_telegram_id(session, 424242)
+        access_ids = server_access_service.list_accessible_server_ids(session, new_user.id)
     assert new_user is not None
     assert new_user.full_name == "Charlie"
+    assert access_ids == {lab_setup["server_id"]}
+
+
+async def test_add_user_requires_at_least_one_server(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    await manage_users.start(make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot), context)
+    await manage_users.menu_choice(make_text_update(2, ADMIN_TELEGRAM_ID, manage_users.ADD_USER, bot), context)
+    await manage_users.receive_telegram_id(make_text_update(3, ADMIN_TELEGRAM_ID, "111222", bot), context)
+    state = await manage_users.receive_full_name(make_text_update(4, ADMIN_TELEGRAM_ID, "Dana", bot), context)
+    assert state == AdminUserStates.ADD_SERVER_ACCESS
+
+    # Tapping Done with nothing selected is rejected -- at least one server is required.
+    state = await manage_users.choose_new_user_access(make_text_update(5, ADMIN_TELEGRAM_ID, DONE, bot), context)
+    assert state == AdminUserStates.ADD_SERVER_ACCESS
+
+    with session_scope() as session:
+        assert user_service.get_user_by_telegram_id(session, 111222) is None
+
+
+async def test_admin_grants_and_revokes_server_access(lab_setup):
+    telegram_id = lab_setup["telegram_id"]
+    server_id = lab_setup["server_id"]
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    with session_scope() as session:
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        user_id = user.id
+        assert server_access_service.list_accessible_server_ids(session, user_id) == {server_id}
+
+    await manage_users.start(make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot), context)
+    user_label = _first_choice_label(context)
+    state = await manage_users.menu_choice(make_text_update(2, ADMIN_TELEGRAM_ID, user_label, bot), context)
+    assert state == AdminUserStates.MENU  # detail screen (same enum value, dual-purpose state)
+
+    # find the "Server Access" action specifically, since the detail screen has several actions
+    access_label = next(l for l in context.user_data["_choices"] if "Server Access" in l)
+    state = await manage_users.menu_choice(make_text_update(3, ADMIN_TELEGRAM_ID, access_label, bot), context)
+    assert state == AdminUserStates.EDIT_SERVER_ACCESS
+
+    server_label = _first_choice_label(context)
+    assert server_label.startswith("✅")  # pre-checked since Alice already has access
+    state = await manage_users.choose_edit_access(make_text_update(4, ADMIN_TELEGRAM_ID, server_label, bot), context)
+    assert state == AdminUserStates.EDIT_SERVER_ACCESS
+
+    state = await manage_users.choose_edit_access(make_text_update(5, ADMIN_TELEGRAM_ID, DONE, bot), context)
+    assert state == AdminUserStates.MENU
+
+    with session_scope() as session:
+        assert server_access_service.list_accessible_server_ids(session, user_id) == set()  # revoked
+
+
+async def test_user_and_server_lists_render_as_a_2_column_grid(lab_setup):
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+    with session_scope() as session:
+        for i in range(3):
+            user_service.register_user(session, telegram_id=100 + i, full_name=f"Student{i}")
+            server_service.create_server(session, f"extra-server-{i}")
+
+    await manage_users.start(make_text_update(1, ADMIN_TELEGRAM_ID, manage_users.MENU_BUTTON, bot), context)
+    users_markup = bot.send_message.call_args.kwargs["reply_markup"]
+    users_item_rows = [row for row in users_markup.keyboard if len(row) == 2]
+    assert len(users_item_rows) >= 1
+
+    await manage_servers.start(make_text_update(2, ADMIN_TELEGRAM_ID, manage_servers.MENU_BUTTON, bot), context)
+    servers_markup = bot.send_message.call_args.kwargs["reply_markup"]
+    servers_item_rows = [row for row in servers_markup.keyboard if len(row) == 2]
+    assert len(servers_item_rows) >= 1
 
 
 async def test_non_admin_is_rejected(lab_setup):
@@ -230,6 +317,41 @@ async def test_admin_usage_report_renders_chart(lab_setup):
     assert bot.send_photo.call_args.kwargs["photo"].startswith(b"\x89PNG")
 
 
+async def test_admin_usage_report_by_gpu_labels_include_ram(lab_setup, monkeypatch):
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    creation_now = floor_to_slot(utc_now(), 30) - timedelta(days=2)
+    start = creation_now + timedelta(hours=1)
+    end = start + timedelta(hours=2)
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        regulation = regulation_service.get_regulation(session)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        reservation_service.create_reservation(session, user, gpu, start, end, 4096, regulation, now=creation_now)
+
+    captured = {}
+
+    def _fake_render_bar_chart(labels, values, title, ylabel):
+        captured["labels"] = labels
+        return b"\x89PNG"
+
+    monkeypatch.setattr(usage_report, "render_bar_chart", _fake_render_bar_chart)
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, usage_report.MENU_BUTTON, bot)
+    await usage_report.start(update, context)
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, "🖥 By GPU", bot)
+    await usage_report.choose_scope(update, context)
+
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, "Past week", bot)
+    await usage_report.choose_range(update, context)
+
+    assert captured["labels"], "expected at least one GPU label"
+    assert all("GB" in label or "MB" in label for label in captured["labels"])
+
+
 async def test_admin_override_cancel_flow(lab_setup):
     gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
     start = floor_to_slot(utc_now(), 30) + timedelta(hours=2)
@@ -246,14 +368,20 @@ async def test_admin_override_cancel_flow(lab_setup):
 
     update = make_text_update(1, ADMIN_TELEGRAM_ID, reservations_admin.MENU_BUTTON, bot)
     state = await reservations_admin.start(update, context)
+    assert state == AdminReservationsStates.CHOOSE_SCOPE
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, reservations_admin.SCOPE_ALL, bot)
+    state = await reservations_admin.choose_scope(update, context)
     assert state == AdminReservationsStates.CHOOSE_RESERVATION
 
     reservation_label = _first_choice_label(context)
-    update = make_text_update(2, ADMIN_TELEGRAM_ID, reservation_label, bot)
+    assert "→" in reservation_label  # start and end both present
+    assert "GB" in reservation_label or "MB" in reservation_label  # RAM present
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, reservation_label, bot)
     state = await reservations_admin.choose_reservation(update, context)
     assert state == AdminReservationsStates.CONFIRM_CANCEL
 
-    update = make_text_update(3, ADMIN_TELEGRAM_ID, CONFIRM, bot)
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, CONFIRM, bot)
     state = await reservations_admin.confirm_cancel(update, context)
     assert state == ConversationHandler.END
 
@@ -262,6 +390,116 @@ async def test_admin_override_cancel_flow(lab_setup):
 
         cancelled = session.get(Reservation, reservation_id)
     assert cancelled.status == ReservationStatus.CANCELLED
+
+    notify_calls = [c for c in bot.send_message.call_args_list if c.kwargs.get("chat_id") == telegram_id]
+    assert len(notify_calls) == 1
+    assert "cancelled by an admin" in notify_calls[0].kwargs["text"]
+
+
+async def test_admin_reservations_by_user_scope_bulk_cancels_for_that_user(lab_setup):
+    from dml_bot.db.models.reservation import Reservation, ReservationStatus
+
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        regulation = regulation_service.get_regulation(session)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        user_id = user.id
+        start1 = floor_to_slot(utc_now(), 30) + timedelta(hours=2)
+        r1 = reservation_service.create_reservation(session, user, gpu, start1, start1 + timedelta(hours=1), 4096, regulation)
+        start2 = start1 + timedelta(hours=3)
+        r2 = reservation_service.create_reservation(session, user, gpu, start2, start2 + timedelta(hours=1), 4096, regulation)
+        r1_id, r2_id = r1.id, r2.id
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, reservations_admin.MENU_BUTTON, bot)
+    await reservations_admin.start(update, context)
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, reservations_admin.SCOPE_BY_USER, bot)
+    state = await reservations_admin.choose_scope(update, context)
+    assert state == AdminReservationsStates.CHOOSE_USER
+
+    user_label = next(label for label in context.user_data["_choices"] if label.startswith("Alice"))
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, user_label, bot)
+    state = await reservations_admin.choose_user(update, context)
+    assert state == AdminReservationsStates.CHOOSE_RESERVATION
+
+    list_markup = bot.send_message.call_args.kwargs["reply_markup"]
+    button_texts = [btn.text for row in list_markup.keyboard for btn in row]
+    assert reservations_admin.CANCEL_ALL_USER in button_texts
+    assert reservations_admin.CANCEL_ALL_LAB not in button_texts
+
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, reservations_admin.CANCEL_ALL_USER, bot)
+    state = await reservations_admin.choose_reservation(update, context)
+    assert state == AdminReservationsStates.CONFIRM_CANCEL_ALL_USER
+
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, CONFIRM, bot)
+    state = await reservations_admin.confirm_cancel_all_user(update, context)
+    assert state == ConversationHandler.END
+
+    with session_scope() as session:
+        assert session.get(Reservation, r1_id).status == ReservationStatus.CANCELLED
+        assert session.get(Reservation, r2_id).status == ReservationStatus.CANCELLED
+        assert reservation_service.list_active_reservations_for_user(session, user_id) == []
+
+    notify_calls = [c for c in bot.send_message.call_args_list if c.kwargs.get("chat_id") == telegram_id]
+    assert len(notify_calls) == 2  # one notification per cancelled reservation
+    assert all("cancelled by an admin" in c.kwargs["text"] for c in notify_calls)
+
+
+async def test_admin_reservations_cancel_all_lab_wide_requires_typed_phrase(lab_setup):
+    from dml_bot.db.models.reservation import Reservation, ReservationStatus
+
+    gpu_id, telegram_id = lab_setup["gpu_id"], lab_setup["telegram_id"]
+    with session_scope() as session:
+        gpu = session.get(GPU, gpu_id)
+        regulation = regulation_service.get_regulation(session)
+        user = user_service.get_user_by_telegram_id(session, telegram_id)
+        start1 = floor_to_slot(utc_now(), 30) + timedelta(hours=2)
+        r1 = reservation_service.create_reservation(session, user, gpu, start1, start1 + timedelta(hours=1), 4096, regulation)
+        start2 = start1 + timedelta(hours=3)
+        r2 = reservation_service.create_reservation(session, user, gpu, start2, start2 + timedelta(hours=1), 4096, regulation)
+        r1_id, r2_id = r1.id, r2.id
+
+    bot = FakeBot()
+    context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
+
+    update = make_text_update(1, ADMIN_TELEGRAM_ID, reservations_admin.MENU_BUTTON, bot)
+    await reservations_admin.start(update, context)
+
+    update = make_text_update(2, ADMIN_TELEGRAM_ID, reservations_admin.SCOPE_ALL, bot)
+    state = await reservations_admin.choose_scope(update, context)
+    assert state == AdminReservationsStates.CHOOSE_RESERVATION
+
+    list_markup = bot.send_message.call_args.kwargs["reply_markup"]
+    button_texts = [btn.text for row in list_markup.keyboard for btn in row]
+    assert reservations_admin.CANCEL_ALL_LAB in button_texts
+
+    update = make_text_update(3, ADMIN_TELEGRAM_ID, reservations_admin.CANCEL_ALL_LAB, bot)
+    state = await reservations_admin.choose_reservation(update, context)
+    assert state == AdminReservationsStates.TYPE_CONFIRM_CANCEL_ALL_LAB
+
+    # Wrong text does not cancel anything and re-prompts for the exact phrase.
+    update = make_text_update(4, ADMIN_TELEGRAM_ID, "yes please", bot)
+    state = await reservations_admin.confirm_cancel_all_lab(update, context)
+    assert state == AdminReservationsStates.TYPE_CONFIRM_CANCEL_ALL_LAB
+    with session_scope() as session:
+        assert session.get(Reservation, r1_id).status == ReservationStatus.ACTIVE
+
+    # The exact phrase (case-insensitive) cancels every upcoming reservation lab-wide.
+    update = make_text_update(5, ADMIN_TELEGRAM_ID, "cancel all", bot)
+    state = await reservations_admin.confirm_cancel_all_lab(update, context)
+    assert state == ConversationHandler.END
+
+    with session_scope() as session:
+        assert session.get(Reservation, r1_id).status == ReservationStatus.CANCELLED
+        assert session.get(Reservation, r2_id).status == ReservationStatus.CANCELLED
+
+    notify_calls = [c for c in bot.send_message.call_args_list if c.kwargs.get("chat_id") == telegram_id]
+    assert len(notify_calls) == 2  # one notification per cancelled reservation
+    assert all("cancelled by an admin" in c.kwargs["text"] for c in notify_calls)
 
 
 async def test_admin_rename_and_delete_user(lab_setup):
@@ -310,7 +548,7 @@ async def test_admin_rename_and_delete_user(lab_setup):
 
 
 async def test_admin_server_and_gpu_rename_deactivate_delete(lab_setup):
-    server_id = lab_setup["server_id"]
+    server_id, gpu_id = lab_setup["server_id"], lab_setup["gpu_id"]
     bot = FakeBot()
     context = make_context(admin_ids={ADMIN_TELEGRAM_ID})
 
@@ -322,6 +560,11 @@ async def test_admin_server_and_gpu_rename_deactivate_delete(lab_setup):
     update = make_text_update(2, ADMIN_TELEGRAM_ID, server_label, bot)
     state = await manage_servers.menu_choice(update, context)
     assert state == AdminServerStates.SERVER_DETAIL
+
+    gpu_button_label = next(
+        label for label, val in context.user_data["_choices"].items() if val == ("gpu", gpu_id)
+    )
+    assert "GB" in gpu_button_label or "MB" in gpu_button_label
 
     rename_label = next(
         label for label, val in context.user_data["_choices"].items() if val == ("rename_server", server_id)
@@ -412,10 +655,14 @@ async def test_admin_back_and_main_menu_navigation(lab_setup):
     assert state == AdminUserStates.MENU
     assert "_viewing_user_id" not in context.user_data
 
-    # Back again from the list (the first screen) exits the wizard entirely.
+    # Back again from the list (the first screen) steps up to the Admin Panel menu, not the Main Menu.
     update = make_text_update(4, ADMIN_TELEGRAM_ID, BACK, bot)
     state = await manage_users.menu_choice(update, context)
     assert state == ConversationHandler.END
+    assert bot.send_message.call_args.kwargs["text"] == "Admin panel:"
+    admin_panel_texts = [btn.text for row in bot.send_message.call_args.kwargs["reply_markup"].keyboard for btn in row]
+    assert BACK_TO_MAIN in admin_panel_texts
+    assert MAIN_MENU not in admin_panel_texts
 
     # Main Menu exits instantly from any screen, regardless of depth.
     bot2 = FakeBot()
