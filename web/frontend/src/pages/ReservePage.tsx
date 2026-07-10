@@ -2,7 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarPlus } from '@fortawesome/free-solid-svg-icons'
 import { useEffect, useMemo, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
-import { reservationsApi, scheduleApi } from '../api/endpoints'
+import { reservationsApi, scheduleApi, watchesApi } from '../api/endpoints'
 import type { GpuOut, OccupancyChartData, RegulationOut } from '../api/types'
 import { AvailabilityGlance } from '../components/AvailabilityGlance'
 import { DatePicker } from '../components/DatePicker'
@@ -110,6 +110,7 @@ export function ReservePage() {
   const [ramGb, setRamGb] = useState(4)
 
   const [busy, setBusy] = useState(false)
+  const [watchBusy, setWatchBusy] = useState(false)
   // Bumping this refreshes the availability glance + My Reservations after a booking.
   const [reloadSignal, setReloadSignal] = useState(0)
   const toast = useToast()
@@ -192,6 +193,20 @@ export function ReservePage() {
     }
   }
 
+  async function handleCreateWatch() {
+    if (!gpuId) return
+    setWatchBusy(true)
+    try {
+      await watchesApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
+      toast.success('Watch created — the system will auto-book the moment this window has enough free RAM.')
+      setReloadSignal((n) => n + 1) // refresh My Reservations' watches list
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setWatchBusy(false)
+    }
+  }
+
   return (
     <div>
       <h1>
@@ -271,6 +286,14 @@ export function ReservePage() {
                 </p>
                 <button className="btn btn-primary btn-lg btn-block" onClick={handleSubmit} disabled={busy}>
                   {busy ? 'Reserving…' : 'Reserve this GPU'}
+                </button>
+
+                <p className="muted" style={{ marginTop: '1rem' }}>
+                  Not enough free RAM right now for this window? Watch it instead — you'll be auto-booked the
+                  moment it frees up.
+                </p>
+                <button className="btn btn-secondary btn-block" onClick={handleCreateWatch} disabled={watchBusy}>
+                  {watchBusy ? 'Creating watch…' : 'Watch this instead'}
                 </button>
               </>
             )}

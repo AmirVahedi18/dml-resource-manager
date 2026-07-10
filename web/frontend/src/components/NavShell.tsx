@@ -1,7 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faArrowLeft,
-  faBell,
   faCalendarPlus,
   faChartLine,
   faClipboardList,
@@ -28,10 +27,7 @@ function Link({ to, icon, children }: { to: string; icon: IconDefinition; childr
   )
 }
 
-const STUDENT_TABS = [
-  { to: '/', icon: faCalendarPlus, label: 'Reserve' },
-  { to: '/watches', icon: faBell, label: 'Watches' },
-]
+const STUDENT_TABS = [{ to: '/', icon: faCalendarPlus, label: 'Reserve' }]
 
 const ADMIN_TABS = [
   { to: '/admin/users', icon: faUser, label: 'Users' },
@@ -67,7 +63,6 @@ export function NavShell() {
 
         <div className="sidebar-section-label">Student</div>
         <Link to="/" icon={faCalendarPlus}>Reserve GPU</Link>
-        <Link to="/watches" icon={faBell}>Watches</Link>
         <Link to="/change-password" icon={faKey}>Change Password</Link>
         <button type="button" className="sidebar-link sidebar-logout" onClick={() => setLogoutConfirmOpen(true)}>
           <FontAwesomeIcon icon={faRightFromBracket} fixedWidth className="sidebar-link-icon" /> Log out

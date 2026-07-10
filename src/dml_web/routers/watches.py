@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from dml_bot.db.models.user import User
 from dml_bot.db.models.watch import WatchSubscription
-from dml_bot.services import server_service, watch_service
+from dml_bot.services import reservation_service, server_service, watch_service
 from dml_web import access
 from dml_web.deps import get_current_user, get_session
 from dml_web.schemas.watches import WatchCreate, WatchOut
@@ -28,6 +28,14 @@ def create_watch(
     if gpu is None:
         raise HTTPException(404, "GPU not found")
     access.ensure_gpu_access(session, user, gpu)
+
+    # A watch only makes sense while the GPU can't currently satisfy the request -- if it
+    # already has enough free RAM for the whole window, the caller should reserve directly.
+    # Web-only rule (the Reserve GPU page offers watching as a fallback next to reserving); the
+    # Telegram bot's watch flow is unaffected.
+    free_ram = reservation_service.min_free_ram_in_range(session, gpu, payload.range_start, payload.range_end)
+    if free_ram >= payload.min_ram_needed_mb:
+        raise HTTPException(422, "GPU already has enough free RAM for this window -- reserve it directly instead")
 
     # Web offers auto-book watches only -- there's no notification channel to fall back to a
     # plain "just notify" for (see the web-interface plan's "Watches" decision).

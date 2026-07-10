@@ -1,9 +1,9 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCalendarDays } from '@fortawesome/free-solid-svg-icons'
+import { faBell, faCalendarDays } from '@fortawesome/free-solid-svg-icons'
 import { useEffect, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
-import { reservationsApi } from '../api/endpoints'
-import type { ReservationOut } from '../api/types'
+import { reservationsApi, watchesApi } from '../api/endpoints'
+import type { ReservationOut, WatchOut } from '../api/types'
 import { useGpuLookup } from '../api/useGpuLookup'
 import { formatDateTime } from '../utils/formatDate'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -23,12 +23,30 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
   const [pendingCancel, setPendingCancel] = useState<ReservationOut | null>(null)
   const [cancelBusy, setCancelBusy] = useState(false)
 
+  const [watches, setWatches] = useState<WatchOut[] | null>(null)
+  const [watchError, setWatchError] = useState<string | null>(null)
+
   function reload() {
     reservationsApi.list(true).then(setReservations).catch((e) => setError(errorMessage(e)))
   }
 
-  // Refetch on mount and whenever the parent bumps reloadSignal (e.g. after a booking).
+  function reloadWatches() {
+    watchesApi.list().then(setWatches).catch((e) => setWatchError(errorMessage(e)))
+  }
+
+  // Refetch on mount and whenever the parent bumps reloadSignal (e.g. after a booking or watch).
   useEffect(reload, [reloadSignal])
+  useEffect(reloadWatches, [reloadSignal])
+
+  async function handleCancelWatch(id: number) {
+    setWatchError(null)
+    try {
+      await watchesApi.cancel(id)
+      reloadWatches()
+    } catch (e) {
+      setWatchError(errorMessage(e))
+    }
+  }
 
   async function confirmCancel() {
     if (!pendingCancel) return
@@ -128,6 +146,45 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
             })}
           </div>
         </>
+      )}
+
+      <h2 style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
+        <FontAwesomeIcon icon={faBell} /> Watches
+      </h2>
+      {watchError && <div className="error-banner">{watchError}</div>}
+      {watches?.length === 0 && <p className="muted">No active watches.</p>}
+      {watches && watches.length > 0 && (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>GPU</th>
+                <th>From</th>
+                <th>Until</th>
+                <th>Min RAM</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {watches.map((w) => {
+                const gpu = gpuLookup[w.gpu_id]
+                return (
+                  <tr key={w.id}>
+                    <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${w.gpu_id}`}</td>
+                    <td className="num">{formatDateTime(new Date(w.range_start + 'Z'))}</td>
+                    <td className="num">{formatDateTime(new Date(w.range_end + 'Z'))}</td>
+                    <td className="num">{(w.min_ram_needed_mb / 1024).toFixed(1)} GB</td>
+                    <td>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleCancelWatch(w.id)}>
+                        Cancel
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <ConfirmDialog

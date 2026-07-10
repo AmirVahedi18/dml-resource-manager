@@ -6,7 +6,6 @@ import { ToastProvider } from './components/Toast'
 import { NavShell } from './components/NavShell'
 import { LoginPage } from './pages/LoginPage'
 import { ReservePage } from './pages/ReservePage'
-import { WatchesPage } from './pages/WatchesPage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { AdminUsersPage } from './pages/admin/AdminUsersPage'
 import { AdminServersPage } from './pages/admin/AdminServersPage'
@@ -27,7 +26,6 @@ function App() {
               <Route element={<ProtectedRoute />}>
                 <Route element={<NavShell />}>
                   <Route index element={<ReservePage />} />
-                  <Route path="/watches" element={<WatchesPage />} />
                   <Route path="/change-password" element={<ChangePasswordPage />} />
 
                   <Route element={<ProtectedRoute adminOnly />}>
