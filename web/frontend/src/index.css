@@ -222,6 +222,16 @@ body,
   height: 100%;
 }
 
+/* Never scroll the page sideways: any element that ends up wider than the viewport
+   (e.g. a chart that hasn't measured its container yet) is clipped rather than pushing
+   the whole layout off-screen. Root-cause overflow is fixed per-component below; this is
+   the belt-and-suspenders guard so a stray wide child can't shift the entire page left. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 html {
   /* 16px base: the upright Ubuntu sans reads well here, where the old 19px was inflated
      to compensate for the narrow Condensed face that used to be the body font. */
@@ -295,6 +305,11 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -361,6 +376,9 @@ textarea {
   padding: 12px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .topbar-titles {
@@ -475,29 +493,59 @@ textarea {
   box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-/* Reserve page: form (primary) beside supporting chart on desktop; stacks on mobile. */
-.reserve-grid {
+/* --- GPU picker + reservation details --- */
+
+/* Server/GPU picker (left) beside the reservation details form, which fills the
+   otherwise-empty space to its right once a GPU is picked. Stacks on mobile. */
+.picker-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
-.reserve-form-col {
-  position: sticky;
-  top: 16px;
-}
-
-.reserve-form-col .card,
-.reserve-side-col .card {
-  margin-bottom: 18px;
-}
-
-.reserve-side-col .card:last-child {
-  margin-bottom: 0;
+.picker-layout-left,
+.picker-layout-right {
+  min-width: 0;
 }
 
 /* --- Availability glance --- */
+
+/* "Available now" tiles (left) beside the range selector + chart for the selected GPU
+   (right), combined into a single card. Stacks on mobile. */
+.glance-layout {
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: a bare `1fr` track resolves to minmax(auto, 1fr), whose
+     min-content floor lets a non-shrinkable child (the Recharts SVG) balloon the column
+     and force page-wide horizontal scroll. minmax(0, …) lets the track shrink freely. */
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.glance-left,
+.glance-right {
+  min-width: 0;
+}
+
+.glance-right h2 {
+  margin-top: 16px;
+}
+
+.glance-reservations {
+  margin-top: 14px;
+}
+
+.glance-reservations summary {
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 4px 0;
+}
+
+.glance-reservations .table-scroll {
+  margin-top: 10px;
+}
 .glance-server {
   margin-top: 12px;
 }
@@ -1487,13 +1535,10 @@ tr:last-child td {
     display: block;
   }
 
-  /* Collapse the Reserve page's two columns; the form should no longer stick. */
-  .reserve-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .reserve-form-col {
-    position: static;
+  /* Collapse the Availability glance's and GPU picker's two columns on mobile. */
+  .glance-layout,
+  .picker-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {

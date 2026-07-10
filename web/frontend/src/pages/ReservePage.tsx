@@ -8,7 +8,6 @@ import { AvailabilityGlance } from '../components/AvailabilityGlance'
 import { DatePicker } from '../components/DatePicker'
 import { GpuPicker } from '../components/GpuPicker'
 import { MyReservationsCard } from '../components/MyReservationsCard'
-import { OccupancyChart } from '../components/OccupancyChart'
 import { TimeSelect } from '../components/TimeSelect'
 import { useToast } from '../components/Toast'
 import { formatDateTime } from '../utils/formatDate'
@@ -165,14 +164,11 @@ export function ReservePage() {
     setStartDate(value < todayStr ? todayStr : value)
   }
 
-  // Preselect a GPU straight from the "Available now" glance and scroll to the form.
+  // Preselect a GPU straight from the "Available now" glance.
   function handlePick(pickedServerId: number, pickedGpu: GpuOut) {
     setServerId(pickedServerId)
     setGpuId(pickedGpu.id)
     setGpu(pickedGpu)
-    requestAnimationFrame(() => {
-      document.getElementById('reserve-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
   }
 
   const startUtc = useMemo(() => new Date(startValue), [startValue])
@@ -203,51 +199,42 @@ export function ReservePage() {
       </h1>
 
       {/* At-a-glance live availability — the primary entry point; picking a GPU here
-          preselects it in the form and scrolls down to it. */}
-      <AvailabilityGlance selectedGpuId={gpuId} onPick={handlePick} reloadSignal={reloadSignal} />
+          preselects it in the form and scrolls down to it. Also hosts the range selection
+          and availability chart for whichever GPU is currently selected. */}
+      <AvailabilityGlance
+        selectedGpuId={gpuId}
+        onPick={handlePick}
+        reloadSignal={reloadSignal}
+        days={days}
+        availableRangeOptions={availableRangeOptions}
+        onDaysChange={setDays}
+        chart={chart}
+        tz={tz}
+      />
 
       <MyReservationsCard reloadSignal={reloadSignal} />
 
-      <div className="card">
-        <GpuPicker
-          serverId={serverId}
-          gpuId={gpuId}
-          onServerChange={setServerId}
-          onGpuChange={(id, g) => {
-            setGpuId(id)
-            setGpu(g)
-          }}
-        />
-        <div className="field">
-          <label>Range</label>
-          <div className="segmented">
-            {availableRangeOptions.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className={`segmented-option${days === d ? ' segmented-option-active' : ''}`}
-                onClick={() => setDays(d)}
-              >
-                {d === 1 ? 'Today' : `${d}d`}
-              </button>
-            ))}
+      <div className="card card-feature">
+        <div className="picker-layout">
+          <div className="picker-layout-left">
+            <GpuPicker
+              serverId={serverId}
+              gpuId={gpuId}
+              onServerChange={setServerId}
+              onGpuChange={(id, g) => {
+                setGpuId(id)
+                setGpu(g)
+              }}
+            />
           </div>
-        </div>
-      </div>
 
-      {!gpuId && (
-        <div className="card">
-          <p className="muted">Pick a GPU above to see its availability and book a slot.</p>
-        </div>
-      )}
+          <div className="picker-layout-right">
+            {!gpuId && <p className="muted">Pick a GPU on the left to see its availability and book a slot.</p>}
 
-      {gpuId && (
-        // Two-column on desktop: the booking form (primary) sits beside the supporting
-        // availability chart, so the action no longer hides below a tall chart. Stacks on mobile.
-        <div className="reserve-grid">
-          <div className="reserve-form-col" id="reserve-form">
-            {gpu && regulation ? (
-              <div className="card card-feature">
+            {gpuId && (!gpu || !regulation) && <p className="muted">Loading…</p>}
+
+            {gpuId && gpu && regulation && (
+              <>
                 <h2>Reservation details</h2>
                 <div className="row">
                   <div className="field">
@@ -285,54 +272,11 @@ export function ReservePage() {
                 <button className="btn btn-primary btn-lg btn-block" onClick={handleSubmit} disabled={busy}>
                   {busy ? 'Reserving…' : 'Reserve this GPU'}
                 </button>
-              </div>
-            ) : (
-              <div className="card">
-                <p className="muted">Loading…</p>
-              </div>
-            )}
-          </div>
-
-          <div className="reserve-side-col">
-            {chart && (
-              <div className="card">
-                <h2>
-                  Availability — next {days} {days === 1 ? 'day' : 'days'}
-                </h2>
-                <OccupancyChart data={chart} />
-              </div>
-            )}
-
-            {chart && chart.segments.length > 0 && (
-              <div className="card">
-                <h2>Reservations in range</h2>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>User</th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>RAM</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {chart.segments.map((s) => (
-                        <tr key={s.reservation_id}>
-                          <td>{s.user}</td>
-                          <td className="num">{formatDateTime(new Date(s.start))}</td>
-                          <td className="num">{formatDateTime(new Date(s.end))}</td>
-                          <td className="num">{(s.ram_mb / 1024).toFixed(1)} GB</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              </>
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
