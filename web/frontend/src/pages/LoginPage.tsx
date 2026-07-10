@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { errorMessage } from '../api/errorMessage'
 import { useAuth } from '../auth/AuthContext'
+import { AppFooter } from '../components/AppFooter'
 import { ThemeToggle } from '../components/ThemeToggle'
 
 export function LoginPage() {
@@ -50,6 +51,7 @@ export function LoginPage() {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+      <AppFooter />
     </div>
   )
 }

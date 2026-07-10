@@ -501,8 +501,10 @@ tr:last-child td {
   position: relative;
   min-height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
 }
 
 .login-card {
@@ -524,6 +526,21 @@ tr:last-child td {
   padding: 40px;
   text-align: center;
   color: var(--ink-muted);
+}
+
+.app-footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.login-shell .app-footer {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .chart-legend {

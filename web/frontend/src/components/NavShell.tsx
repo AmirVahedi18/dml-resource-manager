@@ -16,6 +16,7 @@ import {
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { AppFooter } from './AppFooter'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -100,6 +101,7 @@ export function NavShell() {
         </div>
         <div className="content">
           <Outlet />
+          <AppFooter />
         </div>
 
         <nav className="bottom-nav">
