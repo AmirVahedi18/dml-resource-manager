@@ -7,11 +7,18 @@ import type { ReservationOut } from '../api/types'
 import { useGpuLookup } from '../api/useGpuLookup'
 import { formatDateTime } from '../utils/formatDate'
 import { ConfirmDialog } from './ConfirmDialog'
+import { useToast } from './Toast'
 
-export function MyReservationsCard() {
+/**
+ * `reloadSignal` — bump this number (from a parent) to force the list to refetch, e.g.
+ * after the parent creates a reservation. Without it, this card kept its own state and
+ * went stale when a booking was made elsewhere on the page.
+ */
+export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number }) {
   const [reservations, setReservations] = useState<ReservationOut[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const gpuLookup = useGpuLookup()
+  const toast = useToast()
 
   const [pendingCancel, setPendingCancel] = useState<ReservationOut | null>(null)
   const [cancelBusy, setCancelBusy] = useState(false)
@@ -20,18 +27,19 @@ export function MyReservationsCard() {
     reservationsApi.list(true).then(setReservations).catch((e) => setError(errorMessage(e)))
   }
 
-  useEffect(reload, [])
+  // Refetch on mount and whenever the parent bumps reloadSignal (e.g. after a booking).
+  useEffect(reload, [reloadSignal])
 
   async function confirmCancel() {
     if (!pendingCancel) return
-    setError(null)
     setCancelBusy(true)
     try {
       await reservationsApi.cancel(pendingCancel.id)
       setPendingCancel(null)
       reload()
+      toast.success('Reservation cancelled.')
     } catch (e) {
-      setError(errorMessage(e))
+      toast.error(errorMessage(e))
     } finally {
       setCancelBusy(false)
     }
@@ -43,8 +51,20 @@ export function MyReservationsCard() {
         <FontAwesomeIcon icon={faCalendarDays} /> My Reservations
       </h2>
       {error && <div className="error-banner">{error}</div>}
-      {reservations === null && <p className="muted">Loading…</p>}
-      {reservations?.length === 0 && <p className="muted">No upcoming reservations.</p>}
+      {reservations === null && !error && (
+        <div aria-hidden>
+          <div className="skeleton-line" style={{ width: '70%' }} />
+          <div className="skeleton-line" style={{ width: '85%' }} />
+          <div className="skeleton-line" style={{ width: '60%' }} />
+        </div>
+      )}
+      {reservations?.length === 0 && (
+        <div className="empty-state">
+          <FontAwesomeIcon icon={faCalendarDays} className="empty-state-icon" />
+          <p className="empty-state-title">No upcoming reservations</p>
+          <p className="muted">Book your first GPU using the form below.</p>
+        </div>
+      )}
       {reservations && reservations.length > 0 && (
         <>
           <div className="table-scroll reservation-table-wrap">
@@ -64,9 +84,10 @@ export function MyReservationsCard() {
                   return (
                     <tr key={r.id}>
                       <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${r.gpu_id}`}</td>
-                      <td>{formatDateTime(new Date(r.start_time + 'Z'))}</td>
-                      <td>{formatDateTime(new Date(r.end_time + 'Z'))}</td>
-                      <td>{(r.ram_mb / 1024).toFixed(1)} GB</td>
+                      {/* time/RAM cells use the .num (Ubuntu Mono) style for aligned digits */}
+                      <td className="num">{formatDateTime(new Date(r.start_time + 'Z'))}</td>
+                      <td className="num">{formatDateTime(new Date(r.end_time + 'Z'))}</td>
+                      <td className="num">{(r.ram_mb / 1024).toFixed(1)} GB</td>
                       <td>
                         <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
                           Cancel

@@ -7,10 +7,16 @@ from dml_bot.config.schema import AppConfig
 from dml_bot.db.models.server import Server
 from dml_bot.db.models.user import User
 from dml_bot.services import regulation_service, reservation_service, server_service
-from dml_bot.utils.time_utils import to_naive_utc
+from dml_bot.utils.time_utils import to_naive_utc, utc_now
 from dml_web import access, chart_data
 from dml_web.deps import get_app_cfg, get_current_user, get_session
-from dml_web.schemas.schedule import GpuOut, RegulationOut, ServerOut
+from dml_web.schemas.schedule import (
+    GpuOut,
+    GpuOverviewOut,
+    RegulationOut,
+    ServerOut,
+    ServerOverviewOut,
+)
 
 router = APIRouter()
 
@@ -36,6 +42,46 @@ def list_servers(
     if accessible is not None:
         servers = [s for s in servers if s.id in accessible]
     return servers
+
+
+@router.get("/overview", response_model=list[ServerOverviewOut])
+def get_overview(
+    session: Session = Depends(get_session), user: User = Depends(get_current_user)
+) -> list[ServerOverviewOut]:
+    """Live free/used RAM per GPU across every server the user can access, in one request.
+
+    "Used now" = sum of RAM held by reservations active at this instant; since they all
+    overlap "now", their sum is exactly the current peak concurrent usage on the GPU.
+    """
+    now = utc_now()
+    servers = server_service.list_servers(session)
+    accessible = access.accessible_server_ids(session, user)
+    if accessible is not None:
+        servers = [s for s in servers if s.id in accessible]
+
+    overview: list[ServerOverviewOut] = []
+    for server in servers:
+        gpu_outs: list[GpuOverviewOut] = []
+        for gpu in server_service.list_gpus(session, server):
+            active = reservation_service.get_overlapping_active_reservations(session, gpu.id, now, now)
+            used = sum(r.ram_mb for r in active)
+            gpu_outs.append(
+                GpuOverviewOut(
+                    id=gpu.id,
+                    index_on_server=gpu.index_on_server,
+                    model_name=gpu.model_name,
+                    total_ram_mb=gpu.total_ram_mb,
+                    used_ram_mb=used,
+                    free_ram_mb=max(gpu.total_ram_mb - used, 0),
+                    active_reservations=len(active),
+                )
+            )
+        overview.append(
+            ServerOverviewOut(
+                id=server.id, name=server.name, description=server.description, gpus=gpu_outs
+            )
+        )
+    return overview
 
 
 @router.get("/servers/{server_id}/gpus", response_model=list[GpuOut])

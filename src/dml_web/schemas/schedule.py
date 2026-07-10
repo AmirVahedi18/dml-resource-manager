@@ -17,6 +17,26 @@ class GpuOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GpuOverviewOut(BaseModel):
+    """A single GPU's live occupancy, as of "now" — used by the Reserve page's
+    at-a-glance availability strip so a user can see what's free before drilling in."""
+
+    id: int
+    index_on_server: int
+    model_name: str
+    total_ram_mb: int
+    used_ram_mb: int  # RAM held by reservations active right now
+    free_ram_mb: int  # total_ram_mb - used_ram_mb, clamped at 0
+    active_reservations: int
+
+
+class ServerOverviewOut(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    gpus: list[GpuOverviewOut]
+
+
 class RegulationOut(BaseModel):
     max_ram_per_reservation_mb: int
     max_duration_hours: int

@@ -21,6 +21,24 @@ export interface GpuOut {
   total_ram_mb: number
 }
 
+/** A GPU's live occupancy "right now" — powers the Reserve page availability glance. */
+export interface GpuOverviewOut {
+  id: number
+  index_on_server: number
+  model_name: string
+  total_ram_mb: number
+  used_ram_mb: number
+  free_ram_mb: number
+  active_reservations: number
+}
+
+export interface ServerOverviewOut {
+  id: number
+  name: string
+  description: string | null
+  gpus: GpuOverviewOut[]
+}
+
 export interface RegulationOut {
   max_ram_per_reservation_mb: number
   max_duration_hours: number

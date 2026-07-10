@@ -55,15 +55,46 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
   const rangeEndMs = new Date(data.range_end).getTime()
   const totalSpan = Math.max(rangeEndMs - rangeStartMs, 1)
 
+  // Evenly spaced tick labels for the timeline's time ruler. On short ranges we include the
+  // hour; on multi-day ranges the date alone keeps labels from crowding.
+  const axisTicks = useMemo(() => {
+    const count = 5
+    const spanDays = totalSpan / 86400_000
+    const withHour = spanDays <= 2
+    return Array.from({ length: count }, (_, i) => {
+      const frac = i / (count - 1)
+      const d = new Date(rangeStartMs + frac * totalSpan)
+      const label = d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        ...(withHour ? { hour: '2-digit', minute: '2-digit' } : {}),
+      })
+      return { frac, label }
+    })
+  }, [rangeStartMs, totalSpan])
+
   return (
     <div>
-      <div className="tabs">
-        <div className={`tab${view === 'bars' ? ' active' : ''}`} onClick={() => setView('bars')}>
+      {/* Real buttons in a tablist so the view switch is keyboard- and SR-accessible. */}
+      <div className="tabs" role="tablist" aria-label="Occupancy view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'bars'}
+          className={`tab${view === 'bars' ? ' active' : ''}`}
+          onClick={() => setView('bars')}
+        >
           Bars
-        </div>
-        <div className={`tab${view === 'timeline' ? ' active' : ''}`} onClick={() => setView('timeline')}>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'timeline'}
+          className={`tab${view === 'timeline' ? ' active' : ''}`}
+          onClick={() => setView('timeline')}
+        >
           Timeline
-        </div>
+        </button>
       </div>
 
       {data.segments.length === 0 && <p className="muted">Fully free in this range.</p>}
@@ -141,6 +172,27 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
               </div>
             </div>
           ))}
+
+          {/* Time ruler so the floating bars are readable against actual dates/times. */}
+          {ranked.length > 0 && (
+            <div className="occ-axis">
+              <div className="occ-timeline-label" aria-hidden />
+              <div className="occ-axis-track">
+                {axisTicks.map((t, i) => (
+                  <span
+                    key={i}
+                    className="occ-axis-tick"
+                    style={{
+                      left: `${t.frac * 100}%`,
+                      transform: i === 0 ? 'none' : i === axisTicks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
+                    }}
+                  >
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

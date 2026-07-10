@@ -79,16 +79,34 @@ export function AdminUsageReportPage() {
       </h1>
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="tabs">
-        <div className={`tab${tab === 'user' ? ' active' : ''}`} onClick={() => setTab('user')}>
+      <div className="tabs" role="tablist" aria-label="Usage report view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'user'}
+          className={`tab${tab === 'user' ? ' active' : ''}`}
+          onClick={() => setTab('user')}
+        >
           <FontAwesomeIcon icon={faUser} /> By User
-        </div>
-        <div className={`tab${tab === 'gpu' ? ' active' : ''}`} onClick={() => setTab('gpu')}>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'gpu'}
+          className={`tab${tab === 'gpu' ? ' active' : ''}`}
+          onClick={() => setTab('gpu')}
+        >
           <FontAwesomeIcon icon={faMicrochip} /> By GPU
-        </div>
-        <div className={`tab${tab === 'historical' ? ' active' : ''}`} onClick={() => setTab('historical')}>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'historical'}
+          className={`tab${tab === 'historical' ? ' active' : ''}`}
+          onClick={() => setTab('historical')}
+        >
           <FontAwesomeIcon icon={faCalendarDays} /> Historical Availability
-        </div>
+        </button>
       </div>
 
       {(tab === 'user' || tab === 'gpu') && (

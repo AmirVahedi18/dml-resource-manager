@@ -1,14 +1,16 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCalendarPlus, faCircleCheck } from '@fortawesome/free-solid-svg-icons'
+import { faCalendarPlus } from '@fortawesome/free-solid-svg-icons'
 import { useEffect, useMemo, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
 import { reservationsApi, scheduleApi } from '../api/endpoints'
 import type { GpuOut, OccupancyChartData, RegulationOut } from '../api/types'
+import { AvailabilityGlance } from '../components/AvailabilityGlance'
 import { DatePicker } from '../components/DatePicker'
 import { GpuPicker } from '../components/GpuPicker'
 import { MyReservationsCard } from '../components/MyReservationsCard'
 import { OccupancyChart } from '../components/OccupancyChart'
 import { TimeSelect } from '../components/TimeSelect'
+import { useToast } from '../components/Toast'
 import { formatDateTime } from '../utils/formatDate'
 
 const RANGE_OPTIONS = [1, 3, 5, 7, 10, 14, 30]
@@ -108,9 +110,10 @@ export function ReservePage() {
   const [durationHours, setDurationHours] = useState(1)
   const [ramGb, setRamGb] = useState(4)
 
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Bumping this refreshes the availability glance + My Reservations after a booking.
+  const [reloadSignal, setReloadSignal] = useState(0)
+  const toast = useToast()
 
   const tz = regulation?.timezone ?? 'UTC'
   const slotMinutes = regulation?.min_reservation_slot_minutes ?? 30
@@ -162,23 +165,32 @@ export function ReservePage() {
     setStartDate(value < todayStr ? todayStr : value)
   }
 
+  // Preselect a GPU straight from the "Available now" glance and scroll to the form.
+  function handlePick(pickedServerId: number, pickedGpu: GpuOut) {
+    setServerId(pickedServerId)
+    setGpuId(pickedGpu.id)
+    setGpu(pickedGpu)
+    requestAnimationFrame(() => {
+      document.getElementById('reserve-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   const startUtc = useMemo(() => new Date(startValue), [startValue])
   const endUtc = useMemo(() => new Date(startUtc.getTime() + durationHours * 3600_000), [startUtc, durationHours])
 
   async function handleSubmit() {
     if (!gpuId) return
-    setError(null)
-    setSuccess(null)
     setBusy(true)
     try {
       await reservationsApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
-      setSuccess('Reservation created.')
+      toast.success('Reservation created.')
+      setReloadSignal((n) => n + 1) // refresh glance + My Reservations
       const today = dateStrFromParts(partsInTz(new Date(), tz))
       const rangeStart = zonedMidnightUtc(today, tz)
       const rangeEnd = new Date(rangeStart.getTime() + days * 86400_000)
       scheduleApi.availability(gpuId, rangeStart.toISOString(), rangeEnd.toISOString()).then(setChart)
     } catch (err) {
-      setError(errorMessage(err))
+      toast.error(errorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -190,7 +202,11 @@ export function ReservePage() {
         <FontAwesomeIcon icon={faCalendarPlus} /> Reserve GPU
       </h1>
 
-      <MyReservationsCard />
+      {/* At-a-glance live availability — the primary entry point; picking a GPU here
+          preselects it in the form and scrolls down to it. */}
+      <AvailabilityGlance selectedGpuId={gpuId} onPick={handlePick} reloadSignal={reloadSignal} />
+
+      <MyReservationsCard reloadSignal={reloadSignal} />
 
       <div className="card">
         <GpuPicker
@@ -219,84 +235,102 @@ export function ReservePage() {
         </div>
       </div>
 
-      {chart && (
+      {!gpuId && (
         <div className="card">
-          <h2>Availability — next {days} {days === 1 ? 'day' : 'days'}</h2>
-          <OccupancyChart data={chart} />
+          <p className="muted">Pick a GPU above to see its availability and book a slot.</p>
         </div>
       )}
 
-      {chart && chart.segments.length > 0 && (
-        <div className="card">
-          <h2>Reservations in range</h2>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>RAM</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chart.segments.map((s) => (
-                  <tr key={s.reservation_id}>
-                    <td>{s.user}</td>
-                    <td>{formatDateTime(new Date(s.start))}</td>
-                    <td>{formatDateTime(new Date(s.end))}</td>
-                    <td>{(s.ram_mb / 1024).toFixed(1)} GB</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {gpuId && (
+        // Two-column on desktop: the booking form (primary) sits beside the supporting
+        // availability chart, so the action no longer hides below a tall chart. Stacks on mobile.
+        <div className="reserve-grid">
+          <div className="reserve-form-col" id="reserve-form">
+            {gpu && regulation ? (
+              <div className="card card-feature">
+                <h2>Reservation details</h2>
+                <div className="row">
+                  <div className="field">
+                    <label>Start Date ({tz})</label>
+                    <DatePicker value={startDate} min={todayStr} max={maxDateStr} onChange={handleDateChange} />
+                  </div>
+                  <div className="field">
+                    <label>Start Time ({tz})</label>
+                    <TimeSelect
+                      value={startValue}
+                      options={slotOptions}
+                      disabled={slotOptions.length === 0}
+                      onChange={setStartValue}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Duration (hours, max {regulation.max_duration_hours})</label>
+                    <input
+                      type="number"
+                      min={slotMinutes / 60}
+                      step={slotMinutes / 60}
+                      max={regulation.max_duration_hours}
+                      value={durationHours}
+                      onChange={(e) => setDurationHours(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>RAM (GB, max {(Math.min(regulation.max_ram_per_reservation_mb, gpu.total_ram_mb) / 1024).toFixed(0)})</label>
+                    <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
+                  </div>
+                </div>
+                <p className="muted">
+                  Ends: <span className="mono">{formatDateTime(endUtc, tz)}</span> ({tz})
+                </p>
+                <button className="btn btn-primary btn-lg btn-block" onClick={handleSubmit} disabled={busy}>
+                  {busy ? 'Reserving…' : 'Reserve this GPU'}
+                </button>
+              </div>
+            ) : (
+              <div className="card">
+                <p className="muted">Loading…</p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
 
-      {gpu && regulation && (
-        <div className="card">
-          <h2>Reservation details</h2>
-          {error && <div className="error-banner">{error}</div>}
-          {success && (
-            <div className="success-banner">
-              <FontAwesomeIcon icon={faCircleCheck} /> {success}
-            </div>
-          )}
-          <div className="row">
-            <div className="field">
-              <label>Start Date ({tz})</label>
-              <DatePicker value={startDate} min={todayStr} max={maxDateStr} onChange={handleDateChange} />
-            </div>
-            <div className="field">
-              <label>Start Time ({tz})</label>
-              <TimeSelect
-                value={startValue}
-                options={slotOptions}
-                disabled={slotOptions.length === 0}
-                onChange={setStartValue}
-              />
-            </div>
-            <div className="field">
-              <label>Duration (hours, max {regulation.max_duration_hours})</label>
-              <input
-                type="number"
-                min={slotMinutes / 60}
-                step={slotMinutes / 60}
-                max={regulation.max_duration_hours}
-                value={durationHours}
-                onChange={(e) => setDurationHours(Number(e.target.value))}
-              />
-            </div>
-            <div className="field">
-              <label>RAM (GB, max {(Math.min(regulation.max_ram_per_reservation_mb, gpu.total_ram_mb) / 1024).toFixed(0)})</label>
-              <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
-            </div>
+          <div className="reserve-side-col">
+            {chart && (
+              <div className="card">
+                <h2>
+                  Availability — next {days} {days === 1 ? 'day' : 'days'}
+                </h2>
+                <OccupancyChart data={chart} />
+              </div>
+            )}
+
+            {chart && chart.segments.length > 0 && (
+              <div className="card">
+                <h2>Reservations in range</h2>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>RAM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {chart.segments.map((s) => (
+                        <tr key={s.reservation_id}>
+                          <td>{s.user}</td>
+                          <td className="num">{formatDateTime(new Date(s.start))}</td>
+                          <td className="num">{formatDateTime(new Date(s.end))}</td>
+                          <td className="num">{(s.ram_mb / 1024).toFixed(1)} GB</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
-          <p className="muted">Ends: {formatDateTime(endUtc, tz)} ({tz})</p>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={busy}>
-            {busy ? 'Reserving…' : 'Reserve'}
-          </button>
         </div>
       )}
     </div>

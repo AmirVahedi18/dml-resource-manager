@@ -11,6 +11,7 @@ import type {
   ReservationOut,
   ServerAdminOut,
   ServerOut,
+  ServerOverviewOut,
   UserAdminOut,
   UserOut,
   UserWithReservationsOut,
@@ -27,6 +28,7 @@ export const authApi = {
 
 export const scheduleApi = {
   regulation: () => api.get<RegulationOut>('/api/regulation'),
+  overview: () => api.get<ServerOverviewOut[]>('/api/overview'),
   servers: () => api.get<ServerOut[]>('/api/servers'),
   gpus: (serverId: number) => api.get<GpuOut[]>(`/api/servers/${serverId}/gpus`),
   availability: (gpuId: number, rangeStart: string, rangeEnd: string, bucketHours?: number) =>

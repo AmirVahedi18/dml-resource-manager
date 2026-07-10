@@ -88,13 +88,25 @@ export function AdminReservationsPage() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card">
-        <div className="tabs">
-          <div className={`tab${scope === 'all' ? ' active' : ''}`} onClick={() => setScope('all')}>
+        <div className="tabs" role="tablist" aria-label="Reservation scope">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === 'all'}
+            className={`tab${scope === 'all' ? ' active' : ''}`}
+            onClick={() => setScope('all')}
+          >
             <FontAwesomeIcon icon={faFolderOpen} /> All Reservations
-          </div>
-          <div className={`tab${scope === 'user' ? ' active' : ''}`} onClick={() => setScope('user')}>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === 'user'}
+            className={`tab${scope === 'user' ? ' active' : ''}`}
+            onClick={() => setScope('user')}
+          >
             <FontAwesomeIcon icon={faUser} /> By User
-          </div>
+          </button>
         </div>
 
         {scope === 'user' && (
