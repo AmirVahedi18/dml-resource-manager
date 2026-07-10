@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 
 def test_ranked_usage_by_user_and_by_gpu(client, admin_headers, db_session, student_with_access, server_and_gpu):
-    from dml_bot.services import reservation_service, regulation_service
+    from dml_core.services import reservation_service, regulation_service
 
     _, gpu = server_and_gpu
     regulation = regulation_service.get_regulation(db_session)
@@ -16,7 +16,10 @@ def test_ranked_usage_by_user_and_by_gpu(client, admin_headers, db_session, stud
 
     r = client.get(
         "/api/admin/usage/ranked", headers=admin_headers,
-        params={"range_start": range_start.isoformat(), "range_end": range_end.isoformat(), "metric": "gpu_hours"},
+        params={
+            "range_start": range_start.isoformat(), "range_end": range_end.isoformat(),
+            "metric": "gpu_hours", "group_by": "user",
+        },
     )
     assert r.status_code == 200
     body = r.json()
@@ -25,7 +28,22 @@ def test_ranked_usage_by_user_and_by_gpu(client, admin_headers, db_session, stud
 
     r = client.get(
         "/api/admin/usage/ranked", headers=admin_headers,
-        params={"range_start": range_start.isoformat(), "range_end": range_end.isoformat(), "metric": "ram_gb_hours"},
+        params={
+            "range_start": range_start.isoformat(), "range_end": range_end.isoformat(),
+            "metric": "ram_gb_hours", "group_by": "user",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["labels"] == ["Student One"]
+    assert body["values"][0] == 8.0  # 4GB * 2h
+
+    r = client.get(
+        "/api/admin/usage/ranked", headers=admin_headers,
+        params={
+            "range_start": range_start.isoformat(), "range_end": range_end.isoformat(),
+            "metric": "ram_gb_hours", "group_by": "gpu",
+        },
     )
     assert r.status_code == 200
     body = r.json()
@@ -34,7 +52,7 @@ def test_ranked_usage_by_user_and_by_gpu(client, admin_headers, db_session, stud
 
 
 def test_historical_availability(client, admin_headers, db_session, student_with_access, server_and_gpu):
-    from dml_bot.services import reservation_service, regulation_service
+    from dml_core.services import reservation_service, regulation_service
 
     _, gpu = server_and_gpu
     regulation = regulation_service.get_regulation(db_session)

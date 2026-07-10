@@ -1,15 +1,15 @@
-"""Background jobs for interface.mode=web -- started from the FastAPI lifespan in main.py.
+"""Background jobs for the web backend -- started from the FastAPI lifespan in main.py.
 
 Only one job matters here: auto-booking matched watches. Web only ever creates auto-book watches
 (see routers/watches.py -- there's no notification channel to fall back to a plain "just notify"
-for), so unlike the bot's equivalent job (`scheduling/jobs.py::run_watch_check`), a watch that can't
-be auto-booked right now (e.g. the student is temporarily at their active-reservation cap) is left
-active and retried next cycle instead of being consumed -- `watch_service.find_matching_watches`
-already filters to `notified_at IS NULL`, so an unbooked match just resurfaces on the next poll.
+for), so a watch that can't be auto-booked right now (e.g. the student is temporarily at their
+active-reservation cap) is left active and retried next cycle instead of being consumed --
+`watch_service.find_matching_watches` already filters to `notified_at IS NULL`, so an unbooked
+match just resurfaces on the next poll.
 
-A stale-watch cleanup job is also included (same retention-based prune as the bot's
-`scheduling/jobs.py::run_cleanup`, reimplemented here rather than imported so dml_web never reaches
-into bot-interface modules -- see the web-interface plan's independence rationale).
+A stale-watch cleanup job is also included (same retention-based prune of long-since-consumed
+`WatchSubscription` rows; `Reservation` rows are never deleted -- kept forever for historical
+availability lookback).
 """
 from datetime import timedelta
 
@@ -17,11 +17,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from dml_bot.config.schema import AppConfig
-from dml_bot.db.models.watch import WatchSubscription
-from dml_bot.db.session import session_scope
-from dml_bot.services import regulation_service, server_service, watch_service
-from dml_bot.utils.time_utils import utc_now
+from dml_core.config.schema import AppConfig
+from dml_core.db.models.watch import WatchSubscription
+from dml_core.db.session import session_scope
+from dml_core.services import regulation_service, server_service, watch_service
+from dml_core.utils.time_utils import utc_now
 
 
 def run_watch_autobook_check(session: Session) -> int:

@@ -2,7 +2,6 @@ export interface UserOut {
   id: number
   username: string | null
   full_name: string
-  student_id: string | null
   is_admin: boolean
   max_concurrent_gpus: number
 }
@@ -10,7 +9,6 @@ export interface UserOut {
 export interface ServerOut {
   id: number
   name: string
-  description: string | null
 }
 
 export interface GpuOut {
@@ -35,12 +33,11 @@ export interface GpuOverviewOut {
 export interface ServerOverviewOut {
   id: number
   name: string
-  description: string | null
   gpus: GpuOverviewOut[]
 }
 
 export interface RegulationOut {
-  max_ram_per_reservation_mb: number
+  max_ram_per_reservation_gb: number
   max_duration_hours: number
   booking_horizon_days: number
   min_reservation_slot_minutes: number
@@ -83,6 +80,7 @@ export interface OccupancySegment {
   user: string
   ram_mb: number
   reservation_id: number
+  cancelled: boolean
 }
 
 export interface OccupancyChartData {
@@ -95,11 +93,14 @@ export interface OccupancyChartData {
   segments: OccupancySegment[]
 }
 
+export interface FreeRamOut {
+  free_ram_mb: number
+}
+
 export interface UserAdminOut {
   id: number
   username: string | null
   full_name: string
-  student_id: string | null
   is_active: boolean
   is_admin: boolean
   max_concurrent_gpus: number
@@ -110,7 +111,6 @@ export interface BulkUserCreateItem {
   username: string
   password: string
   full_name: string
-  student_id?: string | null
   max_concurrent_gpus?: number
   server_ids?: number[]
 }
@@ -125,7 +125,6 @@ export interface BulkUserCreateResultItem {
 export interface ServerAdminOut {
   id: number
   name: string
-  description: string | null
   is_active: boolean
 }
 

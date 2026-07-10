@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.reservation import Reservation
-from dml_bot.db.models.user import User
-from dml_bot.services import regulation_service, reservation_service, server_service
+from dml_core.db.models.reservation import Reservation
+from dml_core.db.models.user import User
+from dml_core.services import regulation_service, reservation_service, server_service
 from dml_web import access
 from dml_web.deps import get_current_user, get_session
 from dml_web.schemas.reservations import ReservationCreate, ReservationOut

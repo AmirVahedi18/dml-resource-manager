@@ -70,7 +70,7 @@ def test_create_reservation_unaligned_slot_returns_422(client, student_with_acce
 
 
 def test_cancel_other_users_reservation_returns_404(client, db_session, student_with_access, server_and_gpu):
-    from dml_bot.services import auth_service, reservation_service, regulation_service
+    from dml_core.services import auth_service, reservation_service, regulation_service
 
     _, gpu = server_and_gpu
     other = auth_service.create_user_with_credentials(db_session, "other1", "otherpass123", "Other One")

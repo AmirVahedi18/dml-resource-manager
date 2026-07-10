@@ -4,10 +4,10 @@ one repeating its own try/except HTTPException translation."""
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from dml_bot.services.auth_service import InvalidCredentialsError, UsernameAlreadyExistsError
-from dml_bot.services.reservation_service import ReservationError
-from dml_bot.services.server_service import GPUIndexConflictError, ServerAlreadyExistsError
-from dml_bot.services.user_service import UserAlreadyExistsError
+from dml_core.services.auth_service import InvalidCredentialsError, UsernameAlreadyExistsError
+from dml_core.services.reservation_service import ReservationError
+from dml_core.services.server_service import GPUIndexConflictError, ServerAlreadyExistsError
+from dml_core.services.user_service import UserAlreadyExistsError
 
 
 def _handler(status_code: int):

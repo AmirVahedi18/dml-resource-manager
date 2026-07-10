@@ -264,6 +264,7 @@ h1 {
   font-weight: 400;
   font-size: 1.7rem;
   letter-spacing: 0.01em;
+  text-align: center;
 }
 h2 {
   font-size: 1.2rem;
@@ -358,7 +359,7 @@ textarea {
   background: none;
   font-family: inherit;
   cursor: pointer;
-  margin-top: 8px;
+  /* margin-top: 8px; */
 }
 
 .main-area {
@@ -430,7 +431,6 @@ textarea {
   justify-content: center;
   padding: 20px;
   z-index: 100;
-  animation: modal-fade-in 0.12s ease;
 }
 
 .modal {
@@ -441,7 +441,6 @@ textarea {
   padding: 20px 22px;
   width: 100%;
   max-width: 420px;
-  animation: modal-pop-in 0.14s ease;
 }
 
 .modal h3 {
@@ -453,26 +452,6 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
-}
-
-@keyframes modal-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes modal-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .card {
@@ -499,14 +478,66 @@ textarea {
    otherwise-empty space to its right once a GPU is picked. Stacks on mobile. */
 .picker-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  /* Left column shrinks to fit the server/GPU picker's own content (it no longer needs a
+     280-380px floor now that it's a compact grid), leaving the reservation form more room. */
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  /* stretch (not start): gives the right column the left column's full height, so its
+     "pick a GPU" placeholder can be centered in the space rather than pinned to the top. */
+  align-items: stretch;
 }
 
 .picker-layout-left,
 .picker-layout-right {
   min-width: 0;
+}
+
+.picker-layout-right {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The placeholder is the sole child while no GPU is picked (the form replaces it once one
+   is) — grow to fill the column and center in both axes. */
+.picker-layout-right > .picker-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* One shared 2-column grid for every server + GPU button, rather than one grid per
+   server: this puts all GPU buttons in the same column track (auto-sized to the widest
+   one) so every GPU card is the same width, while each fixed (non-interactive) server
+   box spans exactly the rows its own GPUs occupy — stretching to match their combined
+   height, so picking a GPU highlights the server it belongs to. */
+.picker-server-list {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 8px;
+}
+
+.picker-server-box {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+
+.picker-server-box-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.picker-server-box-active .picker-btn-sub {
+  color: inherit;
+  opacity: 0.85;
 }
 
 /* --- Availability glance --- */
@@ -515,12 +546,14 @@ textarea {
    (right), combined into a single card. Stacks on mobile. */
 .glance-layout {
   display: grid;
-  /* minmax(0, 1fr), not 1fr: a bare `1fr` track resolves to minmax(auto, 1fr), whose
-     min-content floor lets a non-shrinkable child (the Recharts SVG) balloon the column
-     and force page-wide horizontal scroll. minmax(0, …) lets the track shrink freely. */
+  /* minmax(0, 1fr) on the right, not a bare `1fr`: a bare `1fr` track resolves to
+     minmax(auto, 1fr), whose min-content floor lets a non-shrinkable child (the Recharts
+     SVG) balloon the column and force page-wide horizontal scroll. The left column is
+     capped (rather than an even split) so the GPU tiles — which wrap at a fixed
+     min-width — don't leave dead space that could go to the chart instead. */
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .glance-left,
@@ -528,8 +561,19 @@ textarea {
   min-width: 0;
 }
 
-.glance-right h2 {
-  margin-top: 16px;
+.glance-right {
+  /* Push content down to align with the GPU tiles on the left (which sit below the
+     "Available now" heading). */
+  padding-top: 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.glance-range-picker {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
 }
 
 .glance-reservations {
@@ -691,6 +735,8 @@ textarea {
 
 .password-form {
   max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .btn {
@@ -826,6 +872,12 @@ textarea {
   min-width: 160px;
 }
 
+/* Narrower floor so the reservation-details row (date + time + duration + RAM, 4 fields)
+   fits on a single line instead of wrapping RAM to its own row. */
+.row-tight > .field {
+  min-width: 130px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -892,6 +944,11 @@ tr:last-child td {
   color: var(--ink-muted);
 }
 
+/* Centered "pick something" prompt shown in place of the availability chart / booking form. */
+.picker-placeholder {
+  text-align: center;
+}
+
 /* Friendly empty states — an icon + prompt instead of a bare muted sentence. */
 .empty-state {
   text-align: center;
@@ -913,24 +970,6 @@ tr:last-child td {
 
 .empty-state p {
   margin: 0;
-}
-
-.error-banner {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  font-size: 0.88rem;
-}
-
-.success-banner {
-  background: var(--success-bg);
-  color: var(--success);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  font-size: 0.88rem;
 }
 
 /* --- Toasts (see components/Toast.tsx) --- */
@@ -958,7 +997,6 @@ tr:last-child td {
   border-radius: var(--radius);
   box-shadow: 0 4px 20px rgba(10, 12, 16, 0.18);
   font-size: 0.88rem;
-  animation: toast-slide-in 0.16s ease;
 }
 
 .toast-icon {
@@ -1010,25 +1048,6 @@ tr:last-child td {
   color: var(--accent);
 }
 
-@keyframes toast-slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toast,
-  .modal,
-  .modal-backdrop {
-    animation: none;
-  }
-}
-
 .login-shell {
   position: relative;
   min-height: 100%;
@@ -1078,6 +1097,7 @@ tr:last-child td {
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin-top: 10px;
   font-size: 0.8rem;
@@ -1539,6 +1559,14 @@ tr:last-child td {
   .glance-layout,
   .picker-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .glance-right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 16px;
+    margin-top: 16px;
   }
 
   .sidebar {

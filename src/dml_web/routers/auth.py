@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.user import User
-from dml_bot.services import auth_service
+from dml_core.db.models.user import User
+from dml_core.services import auth_service
 from dml_web import security
 from dml_web.deps import get_current_user, get_session
 from dml_web.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse, UserOut

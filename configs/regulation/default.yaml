@@ -1,6 +1,6 @@
 # Seed values for the singleton Regulation DB row, used only on first run.
 # After that, the DB row is authoritative; admins edit it live via the bot.
-max_ram_per_reservation_mb: 80000
+max_ram_per_reservation_gb: 80
 max_duration_hours: 120
 booking_horizon_days: 30
 min_reservation_slot_minutes: 60

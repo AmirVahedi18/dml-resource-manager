@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.user import User
-from dml_bot.services import auth_service, server_access_service, user_service
+from dml_core.db.models.user import User
+from dml_core.services import auth_service, server_access_service, user_service
 from dml_web.deps import get_session, require_admin
 from dml_web.schemas.admin_users import (
     BulkUserCreateRequest,
@@ -26,7 +26,6 @@ def _to_admin_out(session: Session, user: User) -> UserAdminOut:
         id=user.id,
         username=user.username,
         full_name=user.full_name,
-        student_id=user.student_id,
         is_active=user.is_active,
         is_admin=user.is_admin,
         max_concurrent_gpus=user.max_concurrent_gpus,
@@ -67,7 +66,6 @@ def bulk_create_users(
                 username=item.username,
                 password=item.password,
                 full_name=item.full_name,
-                student_id=item.student_id,
                 max_concurrent_gpus=item.max_concurrent_gpus,
             )
             if item.server_ids:
@@ -98,6 +96,8 @@ def set_active(
     _: User = Depends(require_admin),
 ) -> UserAdminOut:
     user = _get_user_or_404(session, user_id)
+    if not payload.is_active and auth_service.is_bootstrap_admin(user.username):
+        raise HTTPException(422, "Cannot deactivate the bootstrap admin account")
     user_service.set_active(session, user, payload.is_active)
     return _to_admin_out(session, user)
 
@@ -111,6 +111,8 @@ def set_admin(
 ) -> UserAdminOut:
     user = _get_user_or_404(session, user_id)
     if user.is_admin and not payload.is_admin:
+        if auth_service.is_bootstrap_admin(user.username):
+            raise HTTPException(422, "Cannot revoke the bootstrap admin account's admin role")
         remaining_admins = [u for u in user_service.list_users(session, active_only=True) if u.is_admin]
         if len(remaining_admins) <= 1:
             raise HTTPException(422, "Cannot revoke the last remaining admin")
@@ -158,4 +160,6 @@ def delete_user(
     user_id: int, session: Session = Depends(get_session), _: User = Depends(require_admin)
 ) -> None:
     user = _get_user_or_404(session, user_id)
+    if auth_service.is_bootstrap_admin(user.username):
+        raise HTTPException(422, "Cannot delete the bootstrap admin account")
     user_service.delete_user(session, user)

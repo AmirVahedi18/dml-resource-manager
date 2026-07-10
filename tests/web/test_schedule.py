@@ -27,7 +27,7 @@ def test_gpus_for_server_requires_access(client, student_user, server_and_gpu):
 
 
 def test_availability_chart_shape(client, admin_headers, db_session, server_and_gpu):
-    from dml_bot.services import auth_service, reservation_service, regulation_service
+    from dml_core.services import auth_service, reservation_service, regulation_service
 
     _, gpu = server_and_gpu
     regulation = regulation_service.get_regulation(db_session)
@@ -51,3 +51,47 @@ def test_availability_chart_shape(client, admin_headers, db_session, server_and_
     assert len(body["segments"]) == 1
     assert body["segments"][0]["user"] == "Chart User"
     assert any(b["usage"] for b in body["buckets"])
+
+
+def test_free_ram_reflects_overlapping_reservation(client, admin_headers, db_session, server_and_gpu):
+    from dml_core.services import auth_service, reservation_service, regulation_service
+
+    _, gpu = server_and_gpu
+    regulation = regulation_service.get_regulation(db_session)
+    student = auth_service.create_user_with_credentials(db_session, "freeramuser", "freerampass123", "Free Ram User")
+    db_session.commit()
+    start = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    end = start + timedelta(hours=2)
+    reservation_service.create_reservation(db_session, student, gpu, start, end, 4096, regulation)
+    db_session.commit()
+
+    r = client.get(
+        f"/api/gpus/{gpu.id}/free-ram",
+        headers=admin_headers,
+        params={"start": start.isoformat(), "end": end.isoformat()},
+    )
+    assert r.status_code == 200
+    assert r.json()["free_ram_mb"] == gpu.total_ram_mb - 4096
+
+    # A window with no overlap at all is fully free.
+    later_start = end + timedelta(hours=5)
+    later_end = later_start + timedelta(hours=1)
+    r = client.get(
+        f"/api/gpus/{gpu.id}/free-ram",
+        headers=admin_headers,
+        params={"start": later_start.isoformat(), "end": later_end.isoformat()},
+    )
+    assert r.json()["free_ram_mb"] == gpu.total_ram_mb
+
+
+def test_free_ram_requires_access(client, student_user, server_and_gpu):
+    server, gpu = server_and_gpu
+    headers = login(client, "stud1", "studpass123")
+    start = datetime.now(timezone.utc).replace(tzinfo=None)
+    end = start + timedelta(hours=1)
+    r = client.get(
+        f"/api/gpus/{gpu.id}/free-ram",
+        headers=headers,
+        params={"start": start.isoformat(), "end": end.isoformat()},
+    )
+    assert r.status_code == 403

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from dml_bot.db.models.reservation import Reservation, ReservationStatus
+from dml_core.db.models.reservation import Reservation, ReservationStatus
 from tests.web.conftest import login
 
 

@@ -4,24 +4,24 @@ import { errorMessage } from '../api/errorMessage'
 import { useAuth } from '../auth/AuthContext'
 import { AppFooter } from '../components/AppFooter'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { useToast } from '../components/Toast'
 
 export function LoginPage() {
   const { user, login } = useAuth()
+  const toast = useToast()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   if (user) return <Navigate to="/" replace />
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setError(null)
     setBusy(true)
     try {
       await login(username, password)
     } catch (err) {
-      setError(errorMessage(err))
+      toast.error(errorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -38,7 +38,6 @@ export function LoginPage() {
         <p className="muted" style={{ marginBottom: 16, textAlign: 'center' }}>
           Sign in with the username and password your lab admin gave you.
         </p>
-        {error && <div className="error-banner">{error}</div>}
         <div className="field">
           <label>Username</label>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />

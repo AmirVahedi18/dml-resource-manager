@@ -1,6 +1,6 @@
 level: INFO
 dir: logs
-filename: bot.log
+filename: app.log
 max_bytes: 1048576
 backup_count: 5
 console: true

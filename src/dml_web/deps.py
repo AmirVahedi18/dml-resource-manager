@@ -7,9 +7,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from dml_bot.config.schema import AppConfig
-from dml_bot.db.models.user import User
-from dml_bot.db.session import session_scope
+from dml_core.config.schema import AppConfig
+from dml_core.db.models.user import User
+from dml_core.db.session import session_scope
 from dml_web import security
 
 _bearer_scheme = HTTPBearer(auto_error=False)

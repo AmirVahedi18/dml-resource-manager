@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from dml_bot.services import reservation_service as rs
+from dml_core.services import reservation_service as rs
 from tests.factories import make_gpu, make_regulation, make_server, make_user
 
 NOW = datetime(2026, 7, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -15,7 +15,7 @@ def setup(db_session):
     server = make_server(db_session)
     gpu = make_gpu(db_session, server, total_ram_mb=20000)
     regulation = make_regulation(db_session)
-    user = make_user(db_session, telegram_id=1)
+    user = make_user(db_session)
     return db_session, gpu, regulation, user
 
 
@@ -58,21 +58,21 @@ def test_start_beyond_booking_horizon_rejected(setup):
 
 def test_ram_exceeds_regulation_limit(setup):
     session, gpu, regulation, user = setup
-    too_much = regulation.max_ram_per_reservation_mb + 1
+    too_much = regulation.max_ram_per_reservation_gb * 1024 + 1
     with pytest.raises(rs.RamLimitExceededError):
         rs.create_reservation(session, user, gpu, START, END, too_much, regulation, now=NOW)
 
 
 def test_ram_exceeds_gpu_total(setup):
     session, gpu, regulation, user = setup
-    regulation.max_ram_per_reservation_mb = gpu.total_ram_mb + 5000
+    regulation.max_ram_per_reservation_gb = (gpu.total_ram_mb + 5000) // 1024
     with pytest.raises(rs.RamLimitExceededError):
         rs.create_reservation(session, user, gpu, START, END, gpu.total_ram_mb + 1, regulation, now=NOW)
 
 
 def test_two_users_can_share_gpu_within_capacity(setup):
     session, gpu, regulation, user = setup
-    other = make_user(session, telegram_id=2)
+    other = make_user(session)
     rs.create_reservation(session, user, gpu, START, END, 8000, regulation, now=NOW)
     second = rs.create_reservation(session, other, gpu, START, END, 8000, regulation, now=NOW)
     assert second.id is not None
@@ -80,7 +80,7 @@ def test_two_users_can_share_gpu_within_capacity(setup):
 
 def test_capacity_exceeded_on_overlap(setup):
     session, gpu, regulation, user = setup
-    other = make_user(session, telegram_id=2)
+    other = make_user(session)
     rs.create_reservation(session, user, gpu, START, END, 15000, regulation, now=NOW)
     with pytest.raises(rs.CapacityExceededError):
         rs.create_reservation(session, other, gpu, START, END, 8000, regulation, now=NOW)
@@ -88,7 +88,7 @@ def test_capacity_exceeded_on_overlap(setup):
 
 def test_non_overlapping_reservations_both_succeed_even_if_sum_exceeds_capacity(setup):
     session, gpu, regulation, user = setup
-    other = make_user(session, telegram_id=2)
+    other = make_user(session)
     rs.create_reservation(session, user, gpu, START, END, 15000, regulation, now=NOW)
     later_start = END
     later_end = later_start + timedelta(hours=1)
@@ -164,7 +164,7 @@ def test_max_active_reservations_limit(setup):
 
 def test_cancel_reservation_frees_capacity(setup):
     session, gpu, regulation, user = setup
-    other = make_user(session, telegram_id=2)
+    other = make_user(session)
     reservation = rs.create_reservation(session, user, gpu, START, END, 15000, regulation, now=NOW)
     rs.cancel_reservation(session, reservation, now=NOW)
     second = rs.create_reservation(session, other, gpu, START, END, 15000, regulation, now=NOW)
@@ -231,7 +231,7 @@ def test_slot_availability_reflects_partial_overlap(setup):
 
 def test_slot_availability_min_matches_min_free_ram_in_range(setup):
     session, gpu, regulation, user = setup
-    other = make_user(session, telegram_id=2)
+    other = make_user(session)
     rs.create_reservation(session, user, gpu, START, START + timedelta(minutes=30), 5000, regulation, now=NOW)
     rs.create_reservation(
         session, other, gpu, START + timedelta(minutes=30), START + timedelta(hours=1), 9000, regulation, now=NOW

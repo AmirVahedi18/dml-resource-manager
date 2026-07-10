@@ -1,5 +1,7 @@
+import { motion } from 'framer-motion'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { RankedUsageOut } from '../api/types'
+import { fadeVariants } from '../motion'
 
 export function UsageBarChart({ data }: { data: RankedUsageOut }) {
   const chartData = data.labels
@@ -8,7 +10,12 @@ export function UsageBarChart({ data }: { data: RankedUsageOut }) {
 
   const height = Math.max(200, 60 + chartData.length * 34)
 
-  if (chartData.length === 0) return <p className="muted">No reservations in that range.</p>
+  if (chartData.length === 0)
+    return (
+      <motion.p className="muted" variants={fadeVariants} initial="initial" animate="animate">
+        No reservations in that range.
+      </motion.p>
+    )
 
   return (
     <ResponsiveContainer width="100%" height={height}>

@@ -1,6 +1,6 @@
 import pytest
 
-from dml_bot.services import server_service as ss
+from dml_core.services import server_service as ss
 
 
 def test_create_server_and_add_gpu(db_session):

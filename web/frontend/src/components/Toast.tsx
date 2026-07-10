@@ -1,6 +1,8 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleCheck, faCircleExclamation, faCircleInfo, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { toastVariants } from '../motion'
 
 /*
  * Lightweight toast system.
@@ -37,7 +39,7 @@ export function useToast(): ToastApi {
   return ctx
 }
 
-const AUTO_DISMISS_MS = 4500
+const AUTO_DISMISS_MS = 10000
 
 const ICONS: Record<ToastKind, typeof faCircleCheck> = {
   success: faCircleCheck,
@@ -57,8 +59,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (kind: ToastKind, message: ReactNode) => {
       const id = nextId.current++
       setToasts((list) => [...list, { id, kind, message }])
-      // Errors linger a little longer since they usually need reading/acting on.
-      window.setTimeout(() => remove(id), kind === 'error' ? AUTO_DISMISS_MS + 2000 : AUTO_DISMISS_MS)
+      window.setTimeout(() => remove(id), AUTO_DISMISS_MS)
     },
     [remove],
   )
@@ -76,24 +77,31 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="toast-viewport" aria-live="polite" aria-relevant="additions">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`toast toast-${t.kind}`}
-            role={t.kind === 'error' ? 'alert' : 'status'}
-          >
-            <FontAwesomeIcon icon={ICONS[t.kind]} className="toast-icon" aria-hidden />
-            <span className="toast-msg">{t.message}</span>
-            <button
-              type="button"
-              className="toast-close"
-              aria-label="Dismiss notification"
-              onClick={() => remove(t.id)}
+        <AnimatePresence>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              className={`toast toast-${t.kind}`}
+              role={t.kind === 'error' ? 'alert' : 'status'}
+              variants={toastVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
             >
-              <FontAwesomeIcon icon={faXmark} />
-            </button>
-          </div>
-        ))}
+              <FontAwesomeIcon icon={ICONS[t.kind]} className="toast-icon" aria-hidden />
+              <span className="toast-msg">{t.message}</span>
+              <button
+                type="button"
+                className="toast-close"
+                aria-label="Dismiss notification"
+                onClick={() => remove(t.id)}
+              >
+                <FontAwesomeIcon icon={faXmark} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   )

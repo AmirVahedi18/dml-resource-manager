@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from dml_bot.utils import time_utils as tu
+from dml_core.utils import time_utils as tu
 
 
 def test_is_slot_aligned():

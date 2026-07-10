@@ -1,5 +1,4 @@
-// Fixed 8-hue categorical order, matching the bot's Plotly renderers so both interfaces read
-// consistently for anyone who uses both -- see dml_bot/bot_reply/ram_chart_plotly.py.
+// Fixed 8-hue categorical order used consistently across every occupancy/usage chart.
 export const CATEGORICAL_COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4']
 export const OTHER_COLOR = '#898781'
 export const MAX_NAMED_USERS = CATEGORICAL_COLORS.length

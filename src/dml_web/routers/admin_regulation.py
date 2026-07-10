@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.user import User
-from dml_bot.db.models.regulation import Regulation
-from dml_bot.services import regulation_service
+from dml_core.db.models.user import User
+from dml_core.db.models.regulation import Regulation
+from dml_core.services import regulation_service
 from dml_web.deps import get_session, require_admin
 from dml_web.schemas.admin_regulation import RegulationUpdateRequest
 from dml_web.schemas.schedule import RegulationOut

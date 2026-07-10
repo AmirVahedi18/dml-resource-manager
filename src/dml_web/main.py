@@ -1,5 +1,5 @@
-"""FastAPI app factory + process entrypoint for interface.mode=web. Imports only dml_bot's db/
-services/config layer -- never dml_bot.bot / bot_reply / scheduling, which stay Telegram-only."""
+"""FastAPI app factory + process entrypoint for the web backend. Imports only dml_core's db/
+services/config layer."""
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from dml_bot.config.schema import AppConfig
-from dml_bot.db.session import session_scope
-from dml_bot.services import auth_service
+from dml_core.config.schema import AppConfig
+from dml_core.db.session import session_scope
+from dml_core.services import auth_service
 from dml_web import security
 from dml_web.errors import register_exception_handlers
 from dml_web.scheduler import build_scheduler

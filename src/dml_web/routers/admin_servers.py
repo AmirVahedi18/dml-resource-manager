@@ -5,10 +5,10 @@ own id) never has to share a path shape with a server-scoped one."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.gpu import GPU
-from dml_bot.db.models.server import Server
-from dml_bot.db.models.user import User
-from dml_bot.services import server_service
+from dml_core.db.models.gpu import GPU
+from dml_core.db.models.server import Server
+from dml_core.db.models.user import User
+from dml_core.services import server_service
 from dml_web.deps import get_session, require_admin
 from dml_web.schemas.admin_servers import (
     GpuAdminOut,
@@ -27,14 +27,14 @@ gpu_router = APIRouter()
 
 def _get_server_or_404(session: Session, server_id: int) -> Server:
     server = session.get(Server, server_id)
-    if server is None:
+    if server is None or server.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
     return server
 
 
 def _get_gpu_or_404(session: Session, gpu_id: int) -> GPU:
     gpu = server_service.get_gpu(session, gpu_id)
-    if gpu is None:
+    if gpu is None or gpu.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "GPU not found")
     return gpu
 
@@ -50,7 +50,7 @@ def list_servers(
 def create_server(
     payload: ServerCreateRequest, session: Session = Depends(get_session), _: User = Depends(require_admin)
 ) -> Server:
-    return server_service.create_server(session, payload.name, payload.description)
+    return server_service.create_server(session, payload.name)
 
 
 @router.patch("/{server_id}/rename", response_model=ServerAdminOut)

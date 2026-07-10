@@ -3,6 +3,7 @@ import type {
   AdminReservationOut,
   BulkUserCreateItem,
   BulkUserCreateResultItem,
+  FreeRamOut,
   GpuAdminOut,
   GpuOut,
   OccupancyChartData,
@@ -37,6 +38,8 @@ export const scheduleApi = {
       range_end: rangeEnd,
       bucket_hours: bucketHours,
     }),
+  freeRam: (gpuId: number, start: string, end: string) =>
+    api.get<FreeRamOut>(`/api/gpus/${gpuId}/free-ram`, { start, end }),
 }
 
 export const reservationsApi = {
@@ -72,7 +75,7 @@ export const adminUsersApi = {
 
 export const adminServersApi = {
   list: () => api.get<ServerAdminOut[]>('/api/admin/servers'),
-  create: (name: string, description?: string) => api.post<ServerAdminOut>('/api/admin/servers', { name, description }),
+  create: (name: string) => api.post<ServerAdminOut>('/api/admin/servers', { name }),
   rename: (id: number, name: string) => api.patch<ServerAdminOut>(`/api/admin/servers/${id}/rename`, { name }),
   setActive: (id: number, is_active: boolean) =>
     api.patch<ServerAdminOut>(`/api/admin/servers/${id}/active`, { is_active }),
@@ -102,8 +105,18 @@ export const adminReservationsApi = {
 }
 
 export const adminUsageApi = {
-  ranked: (rangeStart: string, rangeEnd: string, metric: 'gpu_hours' | 'ram_gb_hours') =>
-    api.get<RankedUsageOut>('/api/admin/usage/ranked', { range_start: rangeStart, range_end: rangeEnd, metric }),
+  ranked: (
+    rangeStart: string,
+    rangeEnd: string,
+    metric: 'gpu_hours' | 'ram_gb_hours',
+    groupBy: 'user' | 'gpu' = 'user',
+  ) =>
+    api.get<RankedUsageOut>('/api/admin/usage/ranked', {
+      range_start: rangeStart,
+      range_end: rangeEnd,
+      metric,
+      group_by: groupBy,
+    }),
   historicalAvailability: (gpuId: number, startDate: string, days: number) =>
     api.get<OccupancyChartData>('/api/admin/usage/historical-availability', {
       gpu_id: gpuId,

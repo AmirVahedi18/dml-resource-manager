@@ -1,5 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBell, faCalendarDays } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
 import { reservationsApi, watchesApi } from '../api/endpoints'
@@ -7,6 +8,7 @@ import type { ReservationOut, WatchOut } from '../api/types'
 import { useGpuLookup } from '../api/useGpuLookup'
 import { formatDateTime } from '../utils/formatDate'
 import { ConfirmDialog } from './ConfirmDialog'
+import { fadeSlideVariants, fadeVariants } from '../motion'
 import { useToast } from './Toast'
 
 /**
@@ -24,14 +26,17 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
   const [cancelBusy, setCancelBusy] = useState(false)
 
   const [watches, setWatches] = useState<WatchOut[] | null>(null)
-  const [watchError, setWatchError] = useState<string | null>(null)
 
   function reload() {
-    reservationsApi.list(true).then(setReservations).catch((e) => setError(errorMessage(e)))
+    reservationsApi.list(true).then(setReservations).catch((e) => {
+      const msg = errorMessage(e)
+      setError(msg)
+      toast.error(msg)
+    })
   }
 
   function reloadWatches() {
-    watchesApi.list().then(setWatches).catch((e) => setWatchError(errorMessage(e)))
+    watchesApi.list().then(setWatches).catch((e) => toast.error(errorMessage(e)))
   }
 
   // Refetch on mount and whenever the parent bumps reloadSignal (e.g. after a booking or watch).
@@ -39,12 +44,11 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
   useEffect(reloadWatches, [reloadSignal])
 
   async function handleCancelWatch(id: number) {
-    setWatchError(null)
     try {
       await watchesApi.cancel(id)
       reloadWatches()
     } catch (e) {
-      setWatchError(errorMessage(e))
+      toast.error(errorMessage(e))
     }
   }
 
@@ -68,124 +72,144 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
       <h2>
         <FontAwesomeIcon icon={faCalendarDays} /> My Reservations
       </h2>
-      {error && <div className="error-banner">{error}</div>}
-      {reservations === null && !error && (
-        <div aria-hidden>
-          <div className="skeleton-line" style={{ width: '70%' }} />
-          <div className="skeleton-line" style={{ width: '85%' }} />
-          <div className="skeleton-line" style={{ width: '60%' }} />
-        </div>
-      )}
-      {reservations?.length === 0 && (
-        <div className="empty-state">
-          <FontAwesomeIcon icon={faCalendarDays} className="empty-state-icon" />
-          <p className="empty-state-title">No upcoming reservations</p>
-          <p className="muted">Book your first GPU using the form below.</p>
-        </div>
-      )}
-      {reservations && reservations.length > 0 && (
-        <>
-          <div className="table-scroll reservation-table-wrap">
+      <AnimatePresence mode="wait">
+        {reservations === null && !error && (
+          <motion.div key="skeleton" aria-hidden variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            <div className="skeleton-line" style={{ width: '70%' }} />
+            <div className="skeleton-line" style={{ width: '85%' }} />
+            <div className="skeleton-line" style={{ width: '60%' }} />
+          </motion.div>
+        )}
+        {reservations?.length === 0 && (
+          <motion.div key="empty" className="empty-state" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            <FontAwesomeIcon icon={faCalendarDays} className="empty-state-icon" />
+            <p className="empty-state-title">No upcoming reservations</p>
+            <p className="muted">Book your first GPU using the form below.</p>
+          </motion.div>
+        )}
+        {reservations && reservations.length > 0 && (
+          <motion.div key="list" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            <div className="table-scroll reservation-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>GPU</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>RAM</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence>
+                    {reservations.map((r) => {
+                      const gpu = gpuLookup[r.gpu_id]
+                      return (
+                        <motion.tr key={r.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                          <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${r.gpu_id}`}</td>
+                          {/* time/RAM cells use the .num (Ubuntu Mono) style for aligned digits */}
+                          <td className="num">{formatDateTime(new Date(r.start_time + 'Z'))}</td>
+                          <td className="num">{formatDateTime(new Date(r.end_time + 'Z'))}</td>
+                          <td className="num">{(r.ram_mb / 1024).toFixed(1)} GB</td>
+                          <td>
+                            <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
+                              Cancel
+                            </button>
+                          </td>
+                        </motion.tr>
+                      )
+                    })}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="reservation-cards">
+              <AnimatePresence>
+                {reservations.map((r) => {
+                  const gpu = gpuLookup[r.gpu_id]
+                  return (
+                    <motion.div
+                      className="reservation-card"
+                      key={r.id}
+                      layout
+                      variants={fadeSlideVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                    >
+                      <div className="reservation-card-title">
+                        {gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${r.gpu_id}`}
+                      </div>
+                      <div className="reservation-card-row">
+                        <span className="muted">Start</span>
+                        <span>{formatDateTime(new Date(r.start_time + 'Z'))}</span>
+                      </div>
+                      <div className="reservation-card-row">
+                        <span className="muted">End</span>
+                        <span>{formatDateTime(new Date(r.end_time + 'Z'))}</span>
+                      </div>
+                      <div className="reservation-card-row">
+                        <span className="muted">RAM</span>
+                        <span>{(r.ram_mb / 1024).toFixed(1)} GB</span>
+                      </div>
+                      <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
+                        Cancel
+                      </button>
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <h2 style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
+        <FontAwesomeIcon icon={faBell} /> My Watches
+      </h2>
+      <AnimatePresence mode="wait">
+        {watches?.length === 0 && (
+          <motion.p key="empty" className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            No active watches.
+          </motion.p>
+        )}
+        {watches && watches.length > 0 && (
+          <motion.div key="list" className="table-scroll" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
             <table>
               <thead>
                 <tr>
                   <th>GPU</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>RAM</th>
+                  <th>From</th>
+                  <th>Until</th>
+                  <th>Min RAM</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {reservations.map((r) => {
-                  const gpu = gpuLookup[r.gpu_id]
-                  return (
-                    <tr key={r.id}>
-                      <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${r.gpu_id}`}</td>
-                      {/* time/RAM cells use the .num (Ubuntu Mono) style for aligned digits */}
-                      <td className="num">{formatDateTime(new Date(r.start_time + 'Z'))}</td>
-                      <td className="num">{formatDateTime(new Date(r.end_time + 'Z'))}</td>
-                      <td className="num">{(r.ram_mb / 1024).toFixed(1)} GB</td>
-                      <td>
-                        <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
-                          Cancel
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
+                <AnimatePresence>
+                  {watches.map((w) => {
+                    const gpu = gpuLookup[w.gpu_id]
+                    return (
+                      <motion.tr key={w.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                        <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${w.gpu_id}`}</td>
+                        <td className="num">{formatDateTime(new Date(w.range_start + 'Z'))}</td>
+                        <td className="num">{formatDateTime(new Date(w.range_end + 'Z'))}</td>
+                        <td className="num">{(w.min_ram_needed_mb / 1024).toFixed(1)} GB</td>
+                        <td>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleCancelWatch(w.id)}>
+                            Cancel
+                          </button>
+                        </td>
+                      </motion.tr>
+                    )
+                  })}
+                </AnimatePresence>
               </tbody>
             </table>
-          </div>
-
-          <div className="reservation-cards">
-            {reservations.map((r) => {
-              const gpu = gpuLookup[r.gpu_id]
-              return (
-                <div className="reservation-card" key={r.id}>
-                  <div className="reservation-card-title">
-                    {gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${r.gpu_id}`}
-                  </div>
-                  <div className="reservation-card-row">
-                    <span className="muted">Start</span>
-                    <span>{formatDateTime(new Date(r.start_time + 'Z'))}</span>
-                  </div>
-                  <div className="reservation-card-row">
-                    <span className="muted">End</span>
-                    <span>{formatDateTime(new Date(r.end_time + 'Z'))}</span>
-                  </div>
-                  <div className="reservation-card-row">
-                    <span className="muted">RAM</span>
-                    <span>{(r.ram_mb / 1024).toFixed(1)} GB</span>
-                  </div>
-                  <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
-                    Cancel
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      <h2 style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
-        <FontAwesomeIcon icon={faBell} /> Watches
-      </h2>
-      {watchError && <div className="error-banner">{watchError}</div>}
-      {watches?.length === 0 && <p className="muted">No active watches.</p>}
-      {watches && watches.length > 0 && (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>GPU</th>
-                <th>From</th>
-                <th>Until</th>
-                <th>Min RAM</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {watches.map((w) => {
-                const gpu = gpuLookup[w.gpu_id]
-                return (
-                  <tr key={w.id}>
-                    <td>{gpu ? `${gpu.serverName} GPU${gpu.indexOnServer}` : `GPU #${w.gpu_id}`}</td>
-                    <td className="num">{formatDateTime(new Date(w.range_start + 'Z'))}</td>
-                    <td className="num">{formatDateTime(new Date(w.range_end + 'Z'))}</td>
-                    <td className="num">{(w.min_ram_needed_mb / 1024).toFixed(1)} GB</td>
-                    <td>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleCancelWatch(w.id)}>
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ConfirmDialog
         open={pendingCancel !== null}

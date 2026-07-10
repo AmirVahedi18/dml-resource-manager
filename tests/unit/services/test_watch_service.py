@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from dml_bot.services import reservation_service as rs
-from dml_bot.services import watch_service as ws
+from dml_core.services import reservation_service as rs
+from dml_core.services import watch_service as ws
 from tests.factories import make_gpu, make_regulation, make_server, make_user
 
 NOW = datetime(2026, 7, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -12,17 +12,19 @@ END = START + timedelta(hours=2)
 def _setup(db_session, total_ram_mb=20000):
     server = make_server(db_session)
     gpu = make_gpu(db_session, server, total_ram_mb=total_ram_mb)
-    regulation = make_regulation(db_session, max_ram_per_reservation_mb=total_ram_mb)
-    user = make_user(db_session, telegram_id=1)
+    # Round the GB cap up so it can still cover a full-GPU reservation (used to simulate the
+    # GPU being fully occupied), even though total_ram_mb isn't necessarily a multiple of 1024.
+    regulation = make_regulation(db_session, max_ram_per_reservation_gb=-(-total_ram_mb // 1024))
+    user = make_user(db_session)
     return gpu, regulation, user
 
 
 def test_watch_does_not_match_when_gpu_full(db_session):
     gpu, regulation, user = _setup(db_session)
-    occupier = make_user(db_session, telegram_id=2)
+    occupier = make_user(db_session)
     rs.create_reservation(db_session, occupier, gpu, START, END, gpu.total_ram_mb, regulation, now=NOW)
 
-    watcher = make_user(db_session, telegram_id=3)
+    watcher = make_user(db_session)
     ws.create_watch(db_session, watcher, gpu, START, END, 1000)
 
     assert ws.find_matching_watches(db_session, gpu, now=NOW) == []
@@ -30,12 +32,12 @@ def test_watch_does_not_match_when_gpu_full(db_session):
 
 def test_watch_matches_after_cancellation_frees_capacity(db_session):
     gpu, regulation, user = _setup(db_session)
-    occupier = make_user(db_session, telegram_id=2)
+    occupier = make_user(db_session)
     reservation = rs.create_reservation(
         db_session, occupier, gpu, START, END, gpu.total_ram_mb, regulation, now=NOW
     )
 
-    watcher = make_user(db_session, telegram_id=3)
+    watcher = make_user(db_session)
     watch = ws.create_watch(db_session, watcher, gpu, START, END, 1000)
     assert ws.find_matching_watches(db_session, gpu, now=NOW) == []
 

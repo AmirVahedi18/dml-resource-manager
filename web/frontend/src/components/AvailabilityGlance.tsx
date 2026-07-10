@@ -1,9 +1,12 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBolt, faRotate } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { scheduleApi } from '../api/endpoints'
 import type { GpuOut, OccupancyChartData, ServerOverviewOut } from '../api/types'
 import { OccupancyChart } from './OccupancyChart'
+import { useToast } from './Toast'
+import { fadeSlideVariants, fadeVariants } from '../motion'
 import { formatDateTime } from '../utils/formatDate'
 
 /*
@@ -42,6 +45,7 @@ export function AvailabilityGlance({
   chart,
   tz,
 }: Props) {
+  const toast = useToast()
   const [servers, setServers] = useState<ServerOverviewOut[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,10 +55,15 @@ export function AvailabilityGlance({
     scheduleApi
       .overview()
       .then((data) => !cancelled && setServers(data))
-      .catch(() => !cancelled && setError('Could not load live availability.'))
+      .catch(() => {
+        if (cancelled) return
+        setError('Could not load live availability.')
+        toast.error('Could not load live availability.')
+      })
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadSignal])
 
   return (
@@ -65,20 +74,36 @@ export function AvailabilityGlance({
             <FontAwesomeIcon icon={faBolt} /> Available now
           </h2>
 
-          {error && <div className="error-banner">{error}</div>}
+          <AnimatePresence mode="wait">
+            {servers === null && !error && (
+              // Skeleton tiles while the overview loads.
+              <motion.div
+                key="skeleton"
+                className="glance-grid"
+                variants={fadeVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="glance-gpu skeleton-tile" aria-hidden />
+                ))}
+              </motion.div>
+            )}
 
-          {servers === null && !error && (
-            // Skeleton tiles while the overview loads.
-            <div className="glance-grid">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="glance-gpu skeleton-tile" aria-hidden />
-              ))}
-            </div>
-          )}
-
-          {servers && servers.length === 0 && (
-            <p className="muted">No accessible servers yet. Ask your lab admin for access.</p>
-          )}
+            {servers && servers.length === 0 && (
+              <motion.p
+                key="empty"
+                className="muted"
+                variants={fadeVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                No accessible servers yet. Ask your lab admin for access.
+              </motion.p>
+            )}
+          </AnimatePresence>
 
           {servers?.map((server) => (
             <div key={server.id} className="glance-server">
@@ -130,69 +155,102 @@ export function AvailabilityGlance({
             </div>
           ))}
 
-          {servers && servers.length > 0 && (
-            <p className="muted glance-hint">
-              <FontAwesomeIcon icon={faRotate} /> Pick a GPU to fill in the booking form below.
-            </p>
-          )}
+          <AnimatePresence>
+            {servers && servers.length > 0 && (
+              <motion.p
+                key="hint"
+                className="muted glance-hint"
+                variants={fadeVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <FontAwesomeIcon icon={faRotate} /> Pick a GPU to fill in the booking form below.
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="glance-right">
-          {chart ? (
-            <>
-              <h2>
-                Availability — next {days} {days === 1 ? 'day' : 'days'}
-              </h2>
+          <AnimatePresence mode="wait">
+            {chart ? (
+              <motion.div key="chart" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+                <OccupancyChart data={chart} />
 
-              <div className="field">
-                <label>Range</label>
-                <div className="segmented">
-                  {availableRangeOptions.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      className={`segmented-option${days === d ? ' segmented-option-active' : ''}`}
-                      onClick={() => onDaysChange(d)}
-                    >
-                      {d === 1 ? 'Today' : `${d}d`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <OccupancyChart data={chart} />
-
-              {chart.segments.length > 0 && (
-                <details className="glance-reservations">
-                  <summary>Reservations in range ({chart.segments.length})</summary>
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Start</th>
-                          <th>End</th>
-                          <th>RAM</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {chart.segments.map((s) => (
-                          <tr key={s.reservation_id}>
-                            <td>{s.user}</td>
-                            <td className="num">{formatDateTime(new Date(s.start), tz)}</td>
-                            <td className="num">{formatDateTime(new Date(s.end), tz)}</td>
-                            <td className="num">{(s.ram_mb / 1024).toFixed(1)} GB</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="glance-range-picker">
+                  <div className="segmented">
+                    {availableRangeOptions.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`segmented-option${days === d ? ' segmented-option-active' : ''}`}
+                        onClick={() => onDaysChange(d)}
+                      >
+                        {d === 1 ? 'Today' : `${d}d`}
+                      </button>
+                    ))}
                   </div>
-                </details>
-              )}
-            </>
-          ) : (
-            <p className="muted">Pick a GPU to see its availability chart.</p>
-          )}
+                </div>
+
+                <AnimatePresence>
+                  {chart.segments.length > 0 && (
+                    <motion.details
+                      key="reservations"
+                      className="glance-reservations"
+                      variants={fadeSlideVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                    >
+                      <summary>Reservations in range ({chart.segments.length})</summary>
+                      <div className="table-scroll">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>User</th>
+                              <th>Start</th>
+                              <th>End</th>
+                              <th>RAM</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <AnimatePresence>
+                              {chart.segments.map((s) => (
+                                <motion.tr
+                                  key={s.reservation_id}
+                                  layout
+                                  variants={fadeSlideVariants}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                >
+                                  <td>{s.user}</td>
+                                  <td className="num">{formatDateTime(new Date(s.start), tz)}</td>
+                                  <td className="num">{formatDateTime(new Date(s.end), tz)}</td>
+                                  <td className="num">{(s.ram_mb / 1024).toFixed(1)} GB</td>
+                                </motion.tr>
+                              ))}
+                            </AnimatePresence>
+                          </tbody>
+                        </table>
+                      </div>
+                    </motion.details>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ) : (
+              <motion.p
+                key="placeholder"
+                className="muted picker-placeholder"
+                variants={fadeVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                Pick a GPU to see its availability chart.
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

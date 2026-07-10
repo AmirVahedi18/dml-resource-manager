@@ -1,21 +1,21 @@
 import pytest
 
-from dml_bot.config.schema import RegulationConfig
-from dml_bot.services import regulation_service as regs
+from dml_core.config.schema import RegulationConfig
+from dml_core.services import regulation_service as regs
 
 
 def test_ensure_seeded_creates_singleton(db_session):
-    seed = RegulationConfig(max_ram_per_reservation_mb=8192)
+    seed = RegulationConfig(max_ram_per_reservation_gb=8)
     regulation = regs.ensure_seeded(db_session, seed)
-    assert regulation.max_ram_per_reservation_mb == 8192
+    assert regulation.max_ram_per_reservation_gb == 8
 
 
 def test_ensure_seeded_is_idempotent(db_session):
-    seed = RegulationConfig(max_ram_per_reservation_mb=8192)
+    seed = RegulationConfig(max_ram_per_reservation_gb=8)
     first = regs.ensure_seeded(db_session, seed)
-    second = regs.ensure_seeded(db_session, RegulationConfig(max_ram_per_reservation_mb=1))
+    second = regs.ensure_seeded(db_session, RegulationConfig(max_ram_per_reservation_gb=1))
     assert second.id == first.id
-    assert second.max_ram_per_reservation_mb == 8192
+    assert second.max_ram_per_reservation_gb == 8
 
 
 def test_update_regulation(db_session):

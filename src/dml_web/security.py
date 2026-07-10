@@ -1,6 +1,4 @@
-"""JWT issuing/verification for the web API. Configured once at process startup via `configure()`
-(mirrors how the bot threads ADMIN_IDS through `bot_data`) since exactly one web process runs at a
-time -- see `interface.mode` in configs/interface/default.yaml."""
+"""JWT issuing/verification for the web API. Configured once at process startup via `configure()`."""
 from __future__ import annotations
 
 from dataclasses import dataclass

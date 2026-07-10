@@ -1,6 +1,8 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronDown } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
+import { fadeSlideVariants } from '../motion'
 
 export interface SelectOption<T extends string | number> {
   value: T
@@ -52,24 +54,26 @@ export function Select<T extends string | number>({ value, options, placeholder,
         </span>
       </button>
 
-      {open && (
-        <div className="time-select-popover">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              ref={o.value === value ? selectedRef : undefined}
-              type="button"
-              className={`time-select-option${o.value === value ? ' time-select-option-selected' : ''}`}
-              onClick={() => {
-                onChange(o.value)
-                setOpen(false)
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div className="time-select-popover" variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+            {options.map((o) => (
+              <button
+                key={o.value}
+                ref={o.value === value ? selectedRef : undefined}
+                type="button"
+                className={`time-select-option${o.value === value ? ' time-select-option-selected' : ''}`}
+                onClick={() => {
+                  onChange(o.value)
+                  setOpen(false)
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

@@ -18,10 +18,10 @@ RUN pip install --no-cache-dir -e .
 COPY configs ./configs
 COPY main.py ./
 
-RUN useradd --create-home --uid 1000 dmlbot \
+RUN useradd --create-home --uid 1000 dmlapp \
     && mkdir -p /app/data /app/logs \
-    && chown -R dmlbot:dmlbot /app
-USER dmlbot
+    && chown -R dmlapp:dmlapp /app
+USER dmlapp
 
 VOLUME ["/app/data", "/app/logs"]
 

@@ -1,5 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarPlus } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
 import { reservationsApi, scheduleApi, watchesApi } from '../api/endpoints'
@@ -10,6 +11,7 @@ import { GpuPicker } from '../components/GpuPicker'
 import { MyReservationsCard } from '../components/MyReservationsCard'
 import { TimeSelect } from '../components/TimeSelect'
 import { useToast } from '../components/Toast'
+import { fadeVariants } from '../motion'
 import { formatDateTime } from '../utils/formatDate'
 
 const RANGE_OPTIONS = [1, 3, 5, 7, 10, 14, 30]
@@ -108,6 +110,7 @@ export function ReservePage() {
   const [startValue, setStartValue] = useState(() => new Date(Date.now() + 60 * 60 * 1000).toISOString())
   const [durationHours, setDurationHours] = useState(1)
   const [ramGb, setRamGb] = useState(4)
+  const [freeRamMb, setFreeRamMb] = useState<number | null>(null)
 
   const [busy, setBusy] = useState(false)
   const [watchBusy, setWatchBusy] = useState(false)
@@ -133,8 +136,7 @@ export function ReservePage() {
       setChart(null)
       return
     }
-    const today = dateStrFromParts(partsInTz(new Date(), tz))
-    const rangeStart = zonedMidnightUtc(today, tz)
+    const rangeStart = new Date()
     const rangeEnd = new Date(rangeStart.getTime() + days * 86400_000)
     scheduleApi.availability(gpuId, rangeStart.toISOString(), rangeEnd.toISOString()).then(setChart)
   }, [gpuId, regulation, tz, days])
@@ -175,6 +177,23 @@ export function ReservePage() {
   const startUtc = useMemo(() => new Date(startValue), [startValue])
   const endUtc = useMemo(() => new Date(startUtc.getTime() + durationHours * 3600_000), [startUtc, durationHours])
 
+  // Debounced: how much RAM is actually free throughout the picked window, so the user can
+  // judge feasibility before submitting -- durationHours changes on every keystroke, so this
+  // avoids firing a request per digit typed.
+  useEffect(() => {
+    if (!gpuId) {
+      setFreeRamMb(null)
+      return
+    }
+    setFreeRamMb(null)
+    const start = startUtc.toISOString()
+    const end = endUtc.toISOString()
+    const timer = setTimeout(() => {
+      scheduleApi.freeRam(gpuId, start, end).then((r) => setFreeRamMb(r.free_ram_mb))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [gpuId, startUtc, endUtc])
+
   async function handleSubmit() {
     if (!gpuId) return
     setBusy(true)
@@ -182,10 +201,10 @@ export function ReservePage() {
       await reservationsApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
       toast.success('Reservation created.')
       setReloadSignal((n) => n + 1) // refresh glance + My Reservations
-      const today = dateStrFromParts(partsInTz(new Date(), tz))
-      const rangeStart = zonedMidnightUtc(today, tz)
+      const rangeStart = new Date()
       const rangeEnd = new Date(rangeStart.getTime() + days * 86400_000)
       scheduleApi.availability(gpuId, rangeStart.toISOString(), rangeEnd.toISOString()).then(setChart)
+      scheduleApi.freeRam(gpuId, startUtc.toISOString(), endUtc.toISOString()).then((r) => setFreeRamMb(r.free_ram_mb))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -227,31 +246,38 @@ export function ReservePage() {
         tz={tz}
       />
 
-      <MyReservationsCard reloadSignal={reloadSignal} />
-
       <div className="card card-feature">
         <div className="picker-layout">
           <div className="picker-layout-left">
             <GpuPicker
               serverId={serverId}
               gpuId={gpuId}
-              onServerChange={setServerId}
-              onGpuChange={(id, g) => {
-                setGpuId(id)
+              onGpuChange={(sId, gId, g) => {
+                setServerId(sId)
+                setGpuId(gId)
                 setGpu(g)
               }}
             />
           </div>
 
           <div className="picker-layout-right">
-            {!gpuId && <p className="muted">Pick a GPU on the left to see its availability and book a slot.</p>}
+            <AnimatePresence mode="wait">
+              {!gpuId && (
+                <motion.p key="prompt" className="muted picker-placeholder" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+                  Pick a GPU on the left to see its availability and book a slot.
+                </motion.p>
+              )}
 
-            {gpuId && (!gpu || !regulation) && <p className="muted">Loading…</p>}
+              {gpuId && (!gpu || !regulation) && (
+                <motion.p key="loading" className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+                  Loading…
+                </motion.p>
+              )}
 
-            {gpuId && gpu && regulation && (
-              <>
+              {gpuId && gpu && regulation && (
+                <motion.div key="form" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
                 <h2>Reservation details</h2>
-                <div className="row">
+                <div className="row row-tight">
                   <div className="field">
                     <label>Start Date ({tz})</label>
                     <DatePicker value={startDate} min={todayStr} max={maxDateStr} onChange={handleDateChange} />
@@ -277,10 +303,20 @@ export function ReservePage() {
                     />
                   </div>
                   <div className="field">
-                    <label>RAM (GB, max {(Math.min(regulation.max_ram_per_reservation_mb, gpu.total_ram_mb) / 1024).toFixed(0)})</label>
+                    <label>RAM (GB, max {Math.min(regulation.max_ram_per_reservation_gb, gpu.total_ram_mb / 1024).toFixed(0)})</label>
                     <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
                   </div>
                 </div>
+                <p className="muted">
+                  {freeRamMb == null ? (
+                    'Checking free RAM for this window…'
+                  ) : (
+                    <>
+                      Free during this window: <strong>{(freeRamMb / 1024).toFixed(1)} GB</strong> of{' '}
+                      {(gpu.total_ram_mb / 1024).toFixed(0)} GB
+                    </>
+                  )}
+                </p>
                 <p className="muted">
                   Ends: <span className="mono">{formatDateTime(endUtc, tz)}</span> ({tz})
                 </p>
@@ -295,11 +331,14 @@ export function ReservePage() {
                 <button className="btn btn-secondary btn-block" onClick={handleCreateWatch} disabled={watchBusy}>
                   {watchBusy ? 'Creating watch…' : 'Watch this instead'}
                 </button>
-              </>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
+
+      <MyReservationsCard reloadSignal={reloadSignal} />
     </div>
   )
 }

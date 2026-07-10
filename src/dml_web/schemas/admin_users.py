@@ -5,7 +5,6 @@ class UserAdminOut(BaseModel):
     id: int
     username: str | None
     full_name: str
-    student_id: str | None
     is_active: bool
     is_admin: bool
     max_concurrent_gpus: int
@@ -16,7 +15,6 @@ class BulkUserCreateItem(BaseModel):
     username: str
     password: str
     full_name: str
-    student_id: str | None = None
     max_concurrent_gpus: int = 1
     server_ids: list[int] = Field(default_factory=list)
 

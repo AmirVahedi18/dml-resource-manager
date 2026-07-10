@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from dml_bot.db.session import dispose_engine, init_engine
+from dml_core.db.session import dispose_engine, init_engine
 
 
 @pytest.fixture()

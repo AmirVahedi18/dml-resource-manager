@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 
 def _make_reservation(db_session, user, gpu, hours_from_now=1, duration_hours=2, ram_mb=4096):
-    from dml_bot.services import reservation_service, regulation_service
+    from dml_core.services import reservation_service, regulation_service
 
     regulation = regulation_service.get_regulation(db_session)
     start = (datetime.now(timezone.utc) + timedelta(hours=hours_from_now)).replace(
@@ -47,7 +47,7 @@ def test_admin_cancel_single_reservation(client, admin_headers, db_session, stud
 
 
 def test_admin_cancel_bypasses_cancellation_cutoff(client, admin_headers, db_session, student_with_access, server_and_gpu):
-    from dml_bot.services import regulation_service
+    from dml_core.services import regulation_service
 
     _, gpu = server_and_gpu
     regulation_service.update_regulation(db_session, updated_by=1, min_cancellation_notice_minutes=1440)

@@ -3,10 +3,10 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.reservation import Reservation
-from dml_bot.db.models.user import User
-from dml_bot.services import regulation_service, reservation_service, usage_service
-from dml_bot.utils.time_utils import utc_now
+from dml_core.db.models.reservation import Reservation
+from dml_core.db.models.user import User
+from dml_core.services import regulation_service, reservation_service, usage_service
+from dml_core.utils.time_utils import utc_now
 from dml_web.deps import get_session, require_admin
 from dml_web.schemas.admin_reservations import (
     AdminReservationOut,

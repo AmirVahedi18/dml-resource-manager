@@ -20,7 +20,6 @@ class UserOut(BaseModel):
     id: int
     username: str | None
     full_name: str
-    student_id: str | None
     is_admin: bool
     max_concurrent_gpus: int
 

@@ -1,7 +1,4 @@
-"""Pure JSON-shaping for the SPA's occupancy/usage charts. Deliberately independent from
-`bot_reply/ram_chart*.py` (Telegram-only text/PNG rendering, which stays untouched) -- a small
-amount of bucket-boundary math is duplicated here in exchange for the web backend never reaching
-into bot-interface modules. See the "Charts" section of the web-interface plan for the rationale.
+"""Pure JSON-shaping for the SPA's occupancy/usage charts.
 
 The SPA gets one payload per GPU/range covering both a bucketed view (stacked bar) and an exact-
 boundary view (area/timeline), so switching chart style client-side needs no second request.
@@ -11,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from dml_bot.db.models.reservation import Reservation
+from dml_core.db.models.reservation import Reservation
 
 
 def _to_local(dt_utc_naive: datetime, tz_name: str) -> datetime:
@@ -42,8 +39,7 @@ def _bucket_boundaries(
 
 def historical_bucket_hours(days: int) -> float:
     """Scales an admin-chosen historical window's bucket size so a multi-month lookback doesn't
-    render as thousands of buckets (reservations are kept forever -- see scheduling/jobs.py's
-    run_cleanup on the bot side, which this mirrors the intent of, not the code, of)."""
+    render as thousands of buckets (reservations are kept forever, never pruned by cleanup)."""
     if days <= 2:
         return 1.0
     if days <= 7:
@@ -53,6 +49,18 @@ def historical_bucket_hours(days: int) -> float:
     if days <= 120:
         return 24.0
     return 24.0 * 7
+
+
+def _occupied_window(r: Reservation) -> tuple[datetime, datetime] | None:
+    """A reservation's actual occupancy window. For a cancelled reservation this ends at
+    `cancelled_at` instead of the originally-booked `end_time`, so historical charts (which
+    include cancelled reservations for an accurate record) don't show GPU time as occupied past
+    the point it was actually freed up. Returns None if it never occupied the GPU at all (e.g.
+    cancelled before its window started)."""
+    end = r.end_time if r.cancelled_at is None else min(r.end_time, r.cancelled_at)
+    if end <= r.start_time:
+        return None
+    return r.start_time, end
 
 
 def build_occupancy_chart(
@@ -72,7 +80,8 @@ def build_occupancy_chart(
         b_start_utc, b_end_utc = _to_utc_naive(start_local), _to_utc_naive(end_local)
         usage: dict[str, int] = {}
         for r in reservations:
-            if r.start_time < b_end_utc and r.end_time > b_start_utc:
+            window = _occupied_window(r)
+            if window and window[0] < b_end_utc and window[1] > b_start_utc:
                 usage[r.user.full_name] = usage.get(r.user.full_name, 0) + r.ram_mb
         buckets.append({"start": start_local.isoformat(), "end": end_local.isoformat(), "usage": usage})
 
@@ -83,6 +92,7 @@ def build_occupancy_chart(
             "user": r.user.full_name,
             "ram_mb": r.ram_mb,
             "reservation_id": r.id,
+            "cancelled": r.cancelled_at is not None,
         }
         for r in sorted(reservations, key=lambda r: r.start_time)
     ]

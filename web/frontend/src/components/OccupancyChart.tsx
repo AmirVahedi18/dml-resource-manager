@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 import {
   Bar,
@@ -11,6 +12,7 @@ import {
 } from 'recharts'
 import type { OccupancyChartData } from '../api/types'
 import { CATEGORICAL_COLORS, MAX_NAMED_USERS, OTHER_COLOR, colorMap, displayUnit, rankUsers } from './chartColors'
+import { fadeSlideVariants, fadeVariants } from '../motion'
 
 function fmtBucketLabel(iso: string): string {
   const d = new Date(iso)
@@ -97,7 +99,13 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
         </button>
       </div>
 
-      {data.segments.length === 0 && <p className="muted">Fully free in this range.</p>}
+      <AnimatePresence>
+        {data.segments.length === 0 && (
+          <motion.p className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            Fully free in this range.
+          </motion.p>
+        )}
+      </AnimatePresence>
 
       {view === 'bars' && (
         <ResponsiveContainer width="100%" height={320}>
@@ -113,6 +121,7 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
               stroke="var(--border)"
             />
             <YAxis
+              domain={[0, capacityVal]}
               label={{ value: `RAM used (${unitLabel})`, angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--ink-muted)' }}
               tick={{ fontSize: 11, fill: 'var(--ink-muted)' }}
               stroke="var(--border)"
@@ -133,9 +142,24 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
 
       {view === 'timeline' && (
         <div>
-          {ranked.length === 0 && <p className="muted">No reservations in this range.</p>}
+          <AnimatePresence>
+            {ranked.length === 0 && (
+              <motion.p className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+                No reservations in this range.
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
           {ranked.map((name) => (
-            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <motion.div
+              key={name}
+              layout
+              variants={fadeSlideVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}
+            >
               <div className="occ-timeline-label muted">{name}</div>
               <div
                 style={{
@@ -144,23 +168,28 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
                   height: 22,
                   background: 'var(--surface-alt)',
                   borderRadius: 4,
+                  overflow: 'hidden',
                 }}
               >
                 {data.segments
                   .filter((seg) => seg.user === name)
                   .map((seg) => {
-                    const segStart = new Date(seg.start).getTime()
-                    const segEnd = new Date(seg.end).getTime()
+                    // Clip to the visible range on both ends — a reservation that starts
+                    // before rangeStart or ends after rangeEnd must not push the bar's
+                    // left/width past the track's 0–100% bounds (that's what caused bars
+                    // to spill out past the card edge).
+                    const segStart = Math.max(new Date(seg.start).getTime(), rangeStartMs)
+                    const segEnd = Math.min(new Date(seg.end).getTime(), rangeStartMs + totalSpan)
                     const left = ((segStart - rangeStartMs) / totalSpan) * 100
-                    const width = ((segEnd - segStart) / totalSpan) * 100
+                    const width = Math.max(((segEnd - segStart) / totalSpan) * 100, 0.5)
                     return (
                       <div
                         key={seg.reservation_id}
                         title={`${(seg.ram_mb / divisor).toFixed(1)} ${unitLabel} · ${fmtShort(seg.start)} → ${fmtShort(seg.end)}`}
                         style={{
                           position: 'absolute',
-                          left: `${Math.max(left, 0)}%`,
-                          width: `${Math.max(width, 0.5)}%`,
+                          left: `${Math.min(Math.max(left, 0), 100)}%`,
+                          width: `${width}%`,
                           top: 2,
                           bottom: 2,
                           background: colors[name] ?? OTHER_COLOR,
@@ -170,29 +199,32 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
                     )
                   })}
               </div>
-            </div>
+            </motion.div>
           ))}
+          </AnimatePresence>
 
           {/* Time ruler so the floating bars are readable against actual dates/times. */}
-          {ranked.length > 0 && (
-            <div className="occ-axis">
-              <div className="occ-timeline-label" aria-hidden />
-              <div className="occ-axis-track">
-                {axisTicks.map((t, i) => (
-                  <span
-                    key={i}
-                    className="occ-axis-tick"
-                    style={{
-                      left: `${t.frac * 100}%`,
-                      transform: i === 0 ? 'none' : i === axisTicks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
-                    }}
-                  >
-                    {t.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {ranked.length > 0 && (
+              <motion.div className="occ-axis" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+                <div className="occ-timeline-label" aria-hidden />
+                <div className="occ-axis-track">
+                  {axisTicks.map((t, i) => (
+                    <span
+                      key={i}
+                      className="occ-axis-tick"
+                      style={{
+                        left: `${t.frac * 100}%`,
+                        transform: i === 0 ? 'none' : i === axisTicks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
+                      }}
+                    >
+                      {t.label}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 

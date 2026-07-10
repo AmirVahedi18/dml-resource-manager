@@ -3,14 +3,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from dml_bot.config.schema import AppConfig
-from dml_bot.db.models.server import Server
-from dml_bot.db.models.user import User
-from dml_bot.services import regulation_service, reservation_service, server_service
-from dml_bot.utils.time_utils import to_naive_utc, utc_now
+from dml_core.config.schema import AppConfig
+from dml_core.db.models.server import Server
+from dml_core.db.models.user import User
+from dml_core.services import regulation_service, reservation_service, server_service
+from dml_core.utils.time_utils import to_naive_utc, utc_now
 from dml_web import access, chart_data
 from dml_web.deps import get_app_cfg, get_current_user, get_session
 from dml_web.schemas.schedule import (
+    FreeRamOut,
     GpuOut,
     GpuOverviewOut,
     RegulationOut,
@@ -29,7 +30,7 @@ def get_regulation(
 ) -> RegulationOut:
     regulation = regulation_service.get_regulation(session)
     out = RegulationOut.model_validate(regulation)
-    out.timezone = app_cfg.bot.timezone
+    out.timezone = app_cfg.timezone
     return out
 
 
@@ -76,11 +77,7 @@ def get_overview(
                     active_reservations=len(active),
                 )
             )
-        overview.append(
-            ServerOverviewOut(
-                id=server.id, name=server.name, description=server.description, gpus=gpu_outs
-            )
-        )
+        overview.append(ServerOverviewOut(id=server.id, name=server.name, gpus=gpu_outs))
     return overview
 
 
@@ -114,5 +111,24 @@ def get_availability(
     reservations = reservation_service.list_reservations_for_gpu(session, gpu.id, range_start, range_end)
     effective_bucket_hours = bucket_hours if bucket_hours is not None else app_cfg.schedule_chart.bucket_hours
     return chart_data.build_occupancy_chart(
-        reservations, gpu.total_ram_mb, range_start, range_end, app_cfg.bot.timezone, effective_bucket_hours
+        reservations, gpu.total_ram_mb, range_start, range_end, app_cfg.timezone, effective_bucket_hours
     )
+
+
+@router.get("/gpus/{gpu_id}/free-ram", response_model=FreeRamOut)
+def get_free_ram(
+    gpu_id: int,
+    start: datetime = Query(...),
+    end: datetime = Query(...),
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> FreeRamOut:
+    """The minimum free RAM held throughout [start, end) -- i.e. the most this exact window
+    could actually be booked for, used to preview a reservation's feasibility before submit."""
+    gpu = server_service.get_gpu(session, gpu_id)
+    if gpu is None:
+        raise HTTPException(404, "GPU not found")
+    access.ensure_gpu_access(session, user, gpu)
+
+    free_ram_mb = reservation_service.min_free_ram_in_range(session, gpu, start, end)
+    return FreeRamOut(free_ram_mb=free_ram_mb)

@@ -1,8 +1,8 @@
-from dml_bot.db.models import GPU, Regulation, Server, User
+from dml_core.db.models import GPU, Regulation, Server, User
 
 
-def make_user(session, telegram_id=1, full_name="Test User", max_concurrent_gpus=1):
-    user = User(telegram_id=telegram_id, full_name=full_name, max_concurrent_gpus=max_concurrent_gpus)
+def make_user(session, full_name="Test User", max_concurrent_gpus=1):
+    user = User(full_name=full_name, max_concurrent_gpus=max_concurrent_gpus)
     session.add(user)
     session.flush()
     return user
@@ -30,7 +30,7 @@ def make_gpu(session, server, index_on_server=0, model_name="A100", total_ram_mb
 def make_regulation(session, **overrides):
     defaults = dict(
         id=1,
-        max_ram_per_reservation_mb=16384,
+        max_ram_per_reservation_gb=16,
         max_duration_hours=12,
         booking_horizon_days=90,
         min_reservation_slot_minutes=30,

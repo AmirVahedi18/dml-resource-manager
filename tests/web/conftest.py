@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from dml_bot.config.schema import AppConfig, RegulationConfig
-from dml_bot.db.session import dispose_engine, init_engine
-from dml_bot.services import auth_service, regulation_service, server_access_service, server_service
+from dml_core.config.schema import AppConfig, RegulationConfig
+from dml_core.db.session import dispose_engine, init_engine
+from dml_core.services import auth_service, regulation_service, server_access_service, server_service
 from dml_web import security
 from dml_web.main import create_app
 
@@ -39,7 +39,7 @@ def login(client: TestClient, username: str, password: str) -> dict:
 @pytest.fixture()
 def admin_user(db_session):
     user = auth_service.create_user_with_credentials(db_session, "admin1", "adminpass123", "Admin One")
-    from dml_bot.services import user_service
+    from dml_core.services import user_service
 
     user_service.set_admin(db_session, user, True)
     db_session.commit()

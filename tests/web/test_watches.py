@@ -12,13 +12,13 @@ def _future_range(hours_from_now=1, span_hours=10):
     return start.isoformat(), end.isoformat()
 
 
-def _occupy(db_session, gpu, start, end, telegram_id_start=900):
+def _occupy(db_session, gpu, start, end):
     """Books enough of `gpu`, overlapping a single aligned slot at `start`, that it has no free
     RAM left there -- so `min_free_ram_in_range` reports 0 somewhere inside [start, end) and a
     watch can be created for that window (watch creation is rejected when the GPU already has
     enough free RAM). Splits across multiple occupiers since a single reservation is capped at
-    the regulation's max_ram_per_reservation_mb, which can be well under the GPU's total RAM."""
-    from dml_bot.services import regulation_service, reservation_service
+    the regulation's max_ram_per_reservation_gb, which can be well under the GPU's total RAM."""
+    from dml_core.services import regulation_service, reservation_service
 
     regulation = regulation_service.get_regulation(db_session)
     slot = timedelta(minutes=regulation.min_reservation_slot_minutes)
@@ -27,11 +27,9 @@ def _occupy(db_session, gpu, start, end, telegram_id_start=900):
 
     reservations = []
     remaining = gpu.total_ram_mb
-    tid = telegram_id_start
     while remaining > 0:
-        chunk = min(remaining, regulation.max_ram_per_reservation_mb)
-        occupier = make_user(db_session, telegram_id=tid)
-        tid += 1
+        chunk = min(remaining, regulation.max_ram_per_reservation_gb * 1024)
+        occupier = make_user(db_session)
         reservations.append(
             reservation_service.create_reservation(db_session, occupier, gpu, occupied_start, occupied_end, chunk, regulation)
         )
@@ -91,7 +89,7 @@ def test_list_and_cancel_watch(client, db_session, student_with_access, server_a
 
 
 def test_scheduler_autobooks_matching_watch(db_session, student_with_access, server_and_gpu):
-    from dml_bot.services import watch_service
+    from dml_core.services import watch_service
     from dml_web.scheduler import run_watch_autobook_check
 
     _, gpu = server_and_gpu

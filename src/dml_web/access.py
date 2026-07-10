@@ -1,13 +1,11 @@
-"""Shared 'can this user use this server/GPU' checks for web routers -- mirrors
-`bot_reply/gpu_picker.py::accessible_server_ids_for`'s rule (admins have implicit access to every
-server) but kept web-local since it's routing/authorization glue, not core business logic; the bot
-keeps its own copy for the same reason (see the web-interface plan's independence rationale)."""
+"""Shared 'can this user use this server/GPU' checks for web routers -- admins have implicit
+access to every server, students only see/use servers explicitly granted to them."""
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from dml_bot.db.models.gpu import GPU
-from dml_bot.db.models.user import User
-from dml_bot.services import server_access_service
+from dml_core.db.models.gpu import GPU
+from dml_core.db.models.user import User
+from dml_core.services import server_access_service
 
 
 def accessible_server_ids(session: Session, user: User) -> set[int] | None:

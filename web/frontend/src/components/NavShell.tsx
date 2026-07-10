@@ -12,9 +12,11 @@ import {
   faUser,
   type IconDefinition,
 } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { fadeSlideVariants } from '../motion'
 import { AppFooter } from './AppFooter'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ThemeToggle } from './ThemeToggle'
@@ -68,16 +70,24 @@ export function NavShell() {
           <FontAwesomeIcon icon={faRightFromBracket} fixedWidth className="sidebar-link-icon" /> Log out
         </button>
 
-        {user?.is_admin && (
-          <>
-            <div className="sidebar-section-label">Admin</div>
-            <Link to="/admin/users" icon={faUser}>Manage Users</Link>
-            <Link to="/admin/servers" icon={faServer}>Manage Servers</Link>
-            <Link to="/admin/regulation" icon={faScaleBalanced}>Regulation</Link>
-            <Link to="/admin/reservations" icon={faClipboardList}>All Reservations</Link>
-            <Link to="/admin/usage" icon={faChartLine}>Usage Report</Link>
-          </>
-        )}
+        <AnimatePresence>
+          {user?.is_admin && (
+            <motion.div
+              style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+              variants={fadeSlideVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="sidebar-section-label">Admin</div>
+              <Link to="/admin/users" icon={faUser}>Manage Users</Link>
+              <Link to="/admin/servers" icon={faServer}>Manage Servers</Link>
+              <Link to="/admin/regulation" icon={faScaleBalanced}>Regulation</Link>
+              <Link to="/admin/reservations" icon={faClipboardList}>All Reservations</Link>
+              <Link to="/admin/usage" icon={faChartLine}>Usage Report</Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </aside>
 
       <div className="main-area">
@@ -100,23 +110,53 @@ export function NavShell() {
         </div>
 
         <nav className="bottom-nav">
-          {inAdminArea && (
-            <div className="admin-subnav">
-              {ADMIN_TABS.map((t) => (
-                <BottomNavLink key={t.to} to={t.to} icon={t.icon} label={t.label} />
-              ))}
-            </div>
-          )}
+          <AnimatePresence>
+            {inAdminArea && (
+              <motion.div
+                className="admin-subnav"
+                variants={fadeSlideVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                {ADMIN_TABS.map((t) => (
+                  <BottomNavLink key={t.to} to={t.to} icon={t.icon} label={t.label} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="bottom-nav-row">
             {STUDENT_TABS.map((t) => (
               <BottomNavLink key={t.to} to={t.to} icon={t.icon} label={t.label} />
             ))}
             <BottomNavLink to="/change-password" icon={faKey} label="Password" />
-            {user?.is_admin && !inAdminArea && (
-              <BottomNavLink to="/admin/users" icon={faShieldHalved} label="Admin panel" />
-            )}
-            {inAdminArea && <BottomNavLink to="/" icon={faArrowLeft} label="Back" />}
+            <AnimatePresence>
+              {user?.is_admin && !inAdminArea && (
+                <motion.div
+                  key="admin-panel"
+                  style={{ flex: 1, display: 'flex' }}
+                  variants={fadeSlideVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <BottomNavLink to="/admin/users" icon={faShieldHalved} label="Admin panel" />
+                </motion.div>
+              )}
+              {inAdminArea && (
+                <motion.div
+                  key="back"
+                  style={{ flex: 1, display: 'flex' }}
+                  variants={fadeSlideVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <BottomNavLink to="/" icon={faArrowLeft} label="Back" />
+                </motion.div>
+              )}
+            </AnimatePresence>
             <button type="button" className="bottom-nav-item" onClick={() => setLogoutConfirmOpen(true)}>
               <span className="bottom-nav-icon" aria-hidden>
                 <FontAwesomeIcon icon={faRightFromBracket} />

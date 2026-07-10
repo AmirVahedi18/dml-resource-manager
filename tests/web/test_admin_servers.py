@@ -1,5 +1,5 @@
 def test_create_rename_deactivate_delete_server(client, admin_headers):
-    r = client.post("/api/admin/servers", headers=admin_headers, json={"name": "srv-a", "description": "rack a"})
+    r = client.post("/api/admin/servers", headers=admin_headers, json={"name": "srv-a"})
     assert r.status_code == 201
     server_id = r.json()["id"]
 

@@ -1,6 +1,8 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCalendarDays } from '@fortawesome/free-solid-svg-icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
+import { fadeSlideVariants } from '../motion'
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -105,8 +107,9 @@ export function DatePicker({ value, min, max, onChange }: Props) {
         </span>
       </button>
 
-      {open && (
-        <div className="date-picker-popover">
+      <AnimatePresence>
+        {open && (
+        <motion.div className="date-picker-popover" variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
           <div className="date-picker-header">
             <button type="button" className="date-picker-nav" disabled={!canGoPrev} onClick={() => goMonth(-1)} aria-label="Previous month">
               ‹
@@ -164,8 +167,9 @@ export function DatePicker({ value, min, max, onChange }: Props) {
               Today
             </button>
           </div>
-        </div>
-      )}
+        </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
