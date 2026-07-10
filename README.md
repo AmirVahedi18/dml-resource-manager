@@ -1,30 +1,37 @@
 # DML Resource Manager
 
-A Telegram bot that brings fair, transparent GPU-time scheduling to the DML (Data science and
-Machine learning Laboratory) research lab. Students reserve a specific GPU, on a specific server,
-for a specific RAM amount and time window, instead of grabbing whatever's free and holding it
-indefinitely. The lab admin manages users, servers/GPUs, and the regulation (limits) that govern
-every reservation.
+Fair, transparent GPU-time scheduling for the DML (Data science and Machine learning Laboratory)
+research lab. Students reserve a specific GPU, on a specific server, for a specific RAM amount and
+time window, instead of grabbing whatever's free and holding it indefinitely. The lab admin manages
+users, servers/GPUs, and the regulation (limits) that govern every reservation.
 
-The bot is a scheduling/coordination layer, not a live resource monitor: it does not connect to
+The app is a scheduling/coordination layer, not a live resource monitor: it does not connect to
 the lab's servers. "Usage" in admin reports and schedules means *booked* time and RAM, not
 real-time `nvidia-smi` telemetry. Compliance with reserved time slots is enforced by lab policy,
 not by the software.
 
+There are **two independent interfaces** for the same underlying app, sharing one database — a
+**Telegram bot** (`src/dml_bot/bot_reply/`, the original interface) and a **web UI**
+(`src/dml_web/` + `web/frontend/`, a FastAPI backend + React SPA). Only one runs per deployment,
+picked by `interface.mode` (see [Choosing an interface](#choosing-an-interface)). Both are thin
+presentation layers over the same framework-agnostic `services/` business logic — a rule enforced
+in one interface is enforced identically in the other, since neither duplicates it.
+
 ## How it works
 
-- **Students** register with the admin (see [Registering a student](#registering-a-student)), then
-  reserve a GPU, browse the schedule, cancel a reservation, or watch a busy time range for freed
-  capacity — opting in to either a plain notification or automatic booking the instant it frees
-  (see [Watches and auto-booking](#watches-and-auto-booking)). The bot is a persistent
-  reply-keyboard menu (a flat button grid docked below the message box, rather than buttons
-  attached to individual messages) — see [Using the bot](#using-the-bot).
+- **Students** register with the admin, then reserve a GPU, browse the schedule, cancel a
+  reservation, or watch a busy time range for freed capacity (see
+  [Watches and auto-booking](#watches-and-auto-booking)). On the bot this is a persistent
+  reply-keyboard menu (see [Using the bot](#using-the-bot)); on the web UI it's an ordinary set of
+  pages (see [Web interface](#web-interface)) — registration differs per interface too (see
+  [Registering a student](#registering-a-student) for the bot's invite-code flow vs. the web's
+  admin-issued username/password).
 - **Admins** manage users, servers/GPUs, the global regulation (RAM/duration/booking-horizon
-  limits), usage charts, and can override-cancel any reservation lab-wide. `ADMIN_IDS` in `.env`
-  is a fixed set of **bootstrap admins** that always have admin rights and can't be revoked
-  through the bot; a bootstrap admin can additionally promote any registered user to a
-  **DB-stored admin role** (e.g. a TA) from Manage Users, without touching `.env` or redeploying
-  (see [Multiple admins](#multiple-admins)).
+  limits), usage charts, and can override-cancel any reservation lab-wide, on either interface.
+  Each interface has its own bootstrap-admin mechanism that always has admin rights and can't be
+  revoked through the app itself — `ADMIN_IDS` in `.env` for the bot, `WEB_ADMIN_USERNAME` for the
+  web UI — from which further admins (e.g. a TA) can be promoted without touching `.env` or
+  redeploying (see [Multiple admins](#multiple-admins)).
 - A reservation is **self-service and auto-confirmed**: if it fits the GPU's free capacity and the
   regulation's limits, it's created immediately — no admin approval step.
 - Multiple students can share one GPU concurrently as long as their combined RAM never exceeds
@@ -35,29 +42,48 @@ not by the software.
 ## Architecture
 
 ```
-main.py                  Entry point: loads .env + Hydra config, runs the bot's polling loop
-configs/                 Hydra configuration tree (bot, database, logging, regulation, scheduler)
+main.py                  Entry point: loads .env + Hydra config, dispatches on interface.mode to
+                           either the bot's polling loop or the web backend
+configs/                 Hydra configuration tree (interface, bot, web, database, logging,
+                           regulation, scheduler, ...)
 src/dml_bot/
   config/                Structured (dataclass) config schema, validated by Hydra at startup
-  db/                    SQLAlchemy models + session management (SQLite)
+  db/                    SQLAlchemy models + session management (SQLite) -- shared by both
+                           interfaces
   services/               Framework-agnostic business logic (reservation conflict checking,
-                           regulation, users, servers, watches, usage aggregation) — unit-tested
-                           independently of Telegram
+                           regulation, users, servers, watches, usage aggregation, auth/credential
+                           management) — unit-tested independently of either interface, imported
+                           by both
   bot/                   Shared identity/permission checks (auth.py) and message formatting
                            (formatting.py), used by bot_reply/ and the scheduler alike
   bot_reply/             python-telegram-bot wiring: a persistent reply-keyboard menu (flat
                            button grid docked below the message box), conversation wizards,
                            admin/student handlers
   scheduling/            APScheduler jobs: freed-slot notifications, pre-start reminders, cleanup
-  charts/                Plotly rendering for admin usage reports (ranked horizontal bar chart)
+                           (bot interface only -- Telegram DMs)
+  charts/                Plotly rendering for admin usage reports (ranked horizontal bar chart) --
+                           bot interface only
   utils/                 Shared helpers (all datetimes are stored/compared as naive UTC, since
                            SQLite drops timezone info on round-trip)
-logs/                    Rotating log files (created at runtime)
-data/                    SQLite database file (created at runtime)
+src/dml_web/             FastAPI web backend -- imports dml_bot's db/services/config layer only,
+                           never bot/bot_reply/scheduling (see "Web interface" below)
+  main.py                App factory + process entrypoint (interface.mode=web)
+  routers/               One module per feature area (auth, schedule, reservations, watches,
+                           admin_users, admin_servers, admin_regulation, admin_reservations,
+                           admin_usage) -- each route is a thin wrapper over a services/ function
+  chart_data.py           Pure JSON-shaping for the SPA's interactive charts (independent
+                           reimplementation of bot_reply/ram_chart*.py's bucketing, since that
+                           module is Telegram/PNG-specific)
+  scheduler.py            Background job: auto-book-only watch matching (web has no notification
+                           channel, so plain "just notify" watches aren't offered)
+web/frontend/             React + TypeScript + Vite SPA talking to dml_web's JSON API
+logs/                    Rotating log files (created at runtime, bot interface only)
+data/                    SQLite database file (created at runtime, shared by both interfaces)
 tests/
   unit/                  Service-layer and scheduling-job tests (in-memory SQLite)
   integration/           Drives real bot handler coroutines against a real (in-memory) DB, only
                            the Telegram network layer is stubbed
+  web/                   Drives the FastAPI app via TestClient against a real (in-memory) DB
 ```
 
 The reservation engine's core algorithm (`services/reservation_service.py`) validates slot
@@ -90,26 +116,44 @@ exactly one place reservation rules are enforced.
 
    | Variable             | Description                                                          |
    |----------------------|-----------------------------------------------------------------------|
-   | `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather)                  |
-   | `ADMIN_IDS`          | Comma-separated Telegram numeric IDs of bootstrap admins (see [Multiple admins](#multiple-admins)) |
+   | `TELEGRAM_BOT_TOKEN` | (bot only) Bot token from [@BotFather](https://t.me/BotFather)      |
+   | `ADMIN_IDS`          | (bot only) Comma-separated Telegram numeric IDs of bootstrap admins (see [Multiple admins](#multiple-admins)) |
+   | `WEB_JWT_SECRET`     | (web only) Signs login session tokens — generate with `openssl rand -hex 32` |
+   | `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD` | (web only) Bootstrap web admin, seeded once on first startup (see [Web interface](#web-interface)) |
    | `TZ`                 | IANA timezone used to display times to users (e.g. `Asia/Tehran`)     |
+
+   Only the variables for the interface you're running (see
+   [Choosing an interface](#choosing-an-interface)) need to be filled in.
 
 3. **Review tunables** in `configs/` (all non-secret, all overridable on the command line via
    Hydra, e.g. `python main.py regulation.booking_horizon_days=60`):
 
+   - `configs/interface/default.yaml` — `mode: bot` or `mode: web` (see
+     [Choosing an interface](#choosing-an-interface))
    - `configs/bot/default.yaml` — display timezone, date-picker window, Telegram parse mode
+   - `configs/web/default.yaml` — web host/port, CORS origins, login session lifetime
    - `configs/database/default.yaml` — SQLite file path
-   - `configs/logging/default.yaml` — log level, rotation size/backups, log directory
+   - `configs/logging/default.yaml` — log level, rotation size/backups, log directory (bot only)
    - `configs/regulation/default.yaml` — seed values for the global regulation (only used to
-     populate the database on first run; after that, admins edit it live via the bot)
+     populate the database on first run; after that, admins edit it live via either interface)
    - `configs/scheduler/default.yaml` — background job poll interval, reminder lead time, stale
      watch-subscription retention window (reservations are never auto-deleted; see
      [Historical availability](#historical-availability-reservations-are-kept-forever))
    - `configs/ram_input/default.yaml`, `configs/schedule_chart/default.yaml`,
-     `configs/list_grids/default.yaml` — bot UI tunables, described in
+     `configs/list_grids/default.yaml` — bot-only UI tunables, described in
      [Using the bot](#using-the-bot) below
 
-4. **Run the bot:**
+### Choosing an interface
+
+`interface.mode` (`configs/interface/default.yaml`, default `bot`) picks which interface `main.py`
+runs — exactly one per deployment/process, since both read and write the same `data/` SQLite file:
+
+```bash
+python main.py                     # interface.mode=bot (default) -- the Telegram bot
+python main.py interface.mode=web  # the FastAPI + React web UI
+```
+
+4. **Run it:**
 
    ```bash
    python main.py
@@ -274,10 +318,12 @@ Unlike the other three screens, the chart's time-bucket width isn't the fixed
 (`usage_report._historical_bucket_hours`: 1h buckets for ≤2 days, up to weekly buckets for windows
 over 120 days), so a multi-month lookback doesn't render as thousands of unreadable buckets.
 
-### Registering a student
+### Registering a student (bot)
 
-The bot does not connect to any lab directory service. Registration is self-service via a one-time
-invite code, so the admin never needs to look up the student's Telegram ID:
+See [Web interface](#web-interface) for the web UI's equivalent (admin-issued username/password,
+no invite code). The bot does not connect to any lab directory service. Registration is
+self-service via a one-time invite code, so the admin never needs to look up the student's
+Telegram ID:
 
 1. The admin opens **🛠 Admin Panel → 👤 Manage Users → ➕ Add User**, types the student's full name,
    then picks which server(s) they may use — at least one is required to finish. The bot replies
@@ -289,9 +335,10 @@ invite code, so the admin never needs to look up the student's Telegram ID:
 A pending (not yet redeemed) invite is listed alongside registered students in **Manage Users**,
 with a 🗑 to revoke it if it was mistyped or is no longer needed.
 
-### Multiple admins
+### Multiple admins (bot)
 
-`ADMIN_IDS` in `.env` is a fixed, comma-separated set of **bootstrap admins** — they always have
+See [Web interface](#web-interface) for the web UI's equivalent (`WEB_ADMIN_USERNAME` in place of
+`ADMIN_IDS`). `ADMIN_IDS` in `.env` is a fixed, comma-separated set of **bootstrap admins** — they always have
 admin rights (`src/dml_bot/bot/auth.py::is_bootstrap_admin`) regardless of anything stored in the
 database, so there's always at least one way in even if the database is wiped.
 
@@ -315,28 +362,36 @@ code or admin action needed — they're already trusted by virtue of being in `A
 
 ### Deploying with Docker
 
-A `Dockerfile` and `docker-compose.yml` give the lab server a repeatable deployment path that
-doesn't depend on a hand-configured virtualenv. The image installs `requirements.txt` and the
-`dml_bot` package (same two steps as the manual [Setup](#setup)), runs as a non-root user, and
-keeps `data/` (the SQLite file) and `logs/` on the host via bind mounts so they survive container
-rebuilds and stay directly inspectable on the server.
+`docker-compose.yml` defines three services behind two [Compose
+profiles](https://docs.docker.com/compose/how-tos/profiles/) — `bot` (the `dml-bot` service, built
+from the root `Dockerfile`) and `web` (`dml-api`, the same root `Dockerfile` running
+`interface.mode=web`, plus `dml-web`, an nginx container serving the built React SPA and proxying
+`/api/*` to `dml-api`). Only start the profile matching `interface.mode`'s deployment — starting
+both against the same `./data` volume is exactly the "don't run both interfaces at once" rule the
+config flag exists to enforce. Both profiles keep `data/` (the SQLite file) and `logs/` on the host
+via bind mounts so they survive container rebuilds and stay directly inspectable on the server.
 
 1. **Configure secrets**, same as manual setup:
 
    ```bash
    cp .env.example .env
-   # then fill in TELEGRAM_BOT_TOKEN, ADMIN_IDS, TZ
+   # then fill in TELEGRAM_BOT_TOKEN, ADMIN_IDS, TZ  (bot)
+   # or WEB_JWT_SECRET, WEB_ADMIN_USERNAME, WEB_ADMIN_PASSWORD, TZ  (web)
    ```
 
-2. **Build and start the bot:**
+2. **Build and start:**
 
    ```bash
-   docker compose up -d --build
+   docker compose --profile bot up -d --build   # Telegram bot
+   # or
+   docker compose --profile web up -d --build   # web UI (FastAPI + nginx/SPA on :8080)
    ```
 
-   This builds the image, creates `./data` and `./logs` on the host if they don't exist, mounts
-   them into the container, and starts the bot in the background with `restart: unless-stopped` (so
-   it comes back up automatically after a server reboot or crash).
+   Creates `./data` and `./logs` on the host if they don't exist, mounts them into the
+   container(s), and starts with `restart: unless-stopped` (so it comes back up automatically after
+   a server reboot or crash). For the `web` profile, the site is reachable at
+   `http://<server>:8080/` — remap the host port in `docker-compose.yml`'s `dml-web.ports` if you
+   want it on 80 instead (needs a host that can bind privileged ports).
 
 3. **Check it's running / follow logs:**
 
@@ -348,19 +403,19 @@ rebuilds and stay directly inspectable on the server.
 4. **Apply a config or code change:**
 
    ```bash
-   docker compose up -d --build
+   docker compose --profile bot up -d --build   # or --profile web
    ```
 
-   Rebuilds the image and recreates the container; `data/` and `logs/` are untouched since they
-   live on the host, not inside the container.
+   Rebuilds the image(s) and recreates the container(s); `data/` and `logs/` are untouched since
+   they live on the host, not inside the container.
 
-5. **Stop the bot:**
+5. **Stop:**
 
    ```bash
-   docker compose down
+   docker compose --profile bot down   # or --profile web
    ```
 
-   The container is removed but `./data` and `./logs` remain on the host.
+   The container(s) are removed but `./data` and `./logs` remain on the host.
 
 Hydra command-line overrides (e.g. changing a regulation default) can be passed by editing the
 `command:` key in `docker-compose.yml`, since Hydra reads `sys.argv` the same way whether it's
@@ -372,7 +427,7 @@ services:
     command: ["python", "main.py", "regulation.booking_horizon_days=60"]
 ```
 
-Without Docker Compose, the equivalent manual commands are:
+Without Docker Compose, the equivalent manual command for the bot is:
 
 ```bash
 docker build -t dml-resource-manager .
@@ -383,9 +438,10 @@ docker run -d --name dml-resource-manager --restart unless-stopped \
   dml-resource-manager
 ```
 
-### Watches and auto-booking
+### Watches and auto-booking (bot)
 
-**🔔 Watches** let a student ask to hear about free capacity on a GPU over a specific window,
+The web UI's watches are auto-book only, with no plain-notify option — see
+[Web interface](#web-interface) for why. **🔔 Watches** let a student ask to hear about free capacity on a GPU over a specific window,
 without polling the schedule themselves. Creating one steps through the same screens, in the same
 order, as **📅 Reserve GPU** (same availability chart after picking the GPU, same date picker, same
 start-time grid, same typed duration/RAM prompts) — the only difference is the final step, where
@@ -408,12 +464,92 @@ silently falls back to a plain notification instead of failing outright, so the 
 left without a signal that capacity is free. Either way — auto-booked or just notified — the watch
 is then consumed; a student who wants to keep watching after that must create a new one.
 
+## Web interface
+
+`interface.mode=web` runs a FastAPI JSON API (`src/dml_web/`) plus a React/TypeScript SPA
+(`web/frontend/`) instead of the Telegram bot, with the same reservation/watch/admin functionality
+described above. It's built as a genuinely separate interface — `dml_web` only imports `dml_bot`'s
+`db`/`services`/`config` layer, never `bot`/`bot_reply`/`scheduling` — so a rule change in
+`services/` (e.g. a new regulation field) takes effect on both interfaces from one place, but a bug
+or change specific to one interface's presentation code can't leak into the other.
+
+### Authentication
+
+The web UI uses local username/password accounts (`User.username`/`User.password_hash`) instead of
+the bot's Telegram-ID-based identity — the same `users` table serves both, but a given account only
+ever populates one identity or the other in practice, since only one interface runs at a time.
+
+- **Bootstrap admin**: `WEB_ADMIN_USERNAME`/`WEB_ADMIN_PASSWORD` in `.env` are seeded into an admin
+  account once, the first time the web backend starts (mirrors `ADMIN_IDS`' role for the bot) — see
+  `auth_service.ensure_admin_seeded`. Existing accounts are left untouched on later restarts even if
+  you change these values.
+- **Everyone else**: the bootstrap (or any) admin creates accounts from **Manage Users → Add
+  users**, setting each one's username and password directly (no invite-code flow) — the form
+  accepts multiple rows so a whole class/cohort can be created in one submission. A user changes
+  their own password later from **Change Password**; an admin can also reset any user's password
+  from **Manage Users**.
+- Sessions are JWT bearer tokens (`WEB_JWT_SECRET` signs them, `web.access_token_expire_minutes`
+  in `configs/web/default.yaml` controls their lifetime), stored client-side in `localStorage` and
+  sent as an `Authorization: Bearer ...` header — there's no server-side session store.
+- An admin can't revoke their own admin role if they're the last remaining admin (`admin_users.py`
+  checks the active-admin count before allowing a demotion) — the web UI's equivalent of the bot's
+  "there's always at least one way in" guarantee, since it has no bootstrap-admin-can't-be-demoted
+  concept of its own.
+
+### What's different from the bot
+
+- **No notifications.** The web UI is action/state-only — there's no Telegram-DM-equivalent push
+  channel. Freed-slot alerts and pre-start reminders (the bot's `scheduling/jobs.py`) simply don't
+  exist here; everything is "check the page when you want to know."
+- **Watches are auto-book only.** Since there's no notification channel, the "just notify" option
+  isn't offered — every web watch auto-books the freed window. `dml_web/scheduler.py` polls the
+  same way the bot's watch-check job does, but only consumes a watch on a *successful* auto-book;
+  if the attempt is rejected (e.g. the student is temporarily at their reservation cap), the watch
+  stays active and is retried next cycle instead of silently falling back to a notification that
+  can't be sent.
+- **Charts are always interactive**, rendered client-side from a JSON payload
+  (`dml_web/chart_data.py` → `OccupancyChart`/`UsageBarChart` in `web/frontend/src/components/`)
+  instead of the bot's admin-configurable PNG/text renderer (`chart_settings`) — that setting only
+  ever existed to work around Telegram not being able to show a live Plotly chart inline, which
+  doesn't apply on the web.
+- **Registration is admin-issued credentials**, not an invite code (see
+  [Authentication](#authentication) above).
+
+### Local development
+
+1. Run the backend in web mode (needs `WEB_JWT_SECRET` and, for the first run,
+   `WEB_ADMIN_USERNAME`/`WEB_ADMIN_PASSWORD` in `.env`):
+
+   ```bash
+   python main.py interface.mode=web
+   ```
+
+   Serves the JSON API on `http://localhost:8000` (`web.host`/`web.port` in
+   `configs/web/default.yaml`).
+
+2. In another terminal, run the SPA's dev server:
+
+   ```bash
+   cd web/frontend
+   npm install
+   npm run dev
+   ```
+
+   Serves on `http://localhost:5173` with `/api/*` proxied to `http://localhost:8000` (see
+   `vite.config.ts`) — the SPA always calls relative `/api/...` paths, so it works unmodified in
+   both dev (via the Vite proxy) and production (via the nginx proxy described in
+   [Deploying with Docker](#deploying-with-docker)).
+
+3. `npm run build` produces the static production bundle (`web/frontend/dist/`); this is what the
+   `dml-web` Docker image serves.
+
 ## Testing
 
 ```bash
-pytest                      # unit + integration tests
+pytest                      # unit + integration + web tests
 pytest tests/unit            # service-layer and scheduling-job logic only
-pytest tests/integration     # full handler/conversation flows against a real (in-memory) DB
+pytest tests/integration     # full bot handler/conversation flows against a real (in-memory) DB
+pytest tests/web             # full FastAPI route flows against a real (in-memory) DB
 ```
 
 Integration tests (`test_reply_*.py`) construct real `python-telegram-bot`
@@ -421,6 +557,12 @@ Integration tests (`test_reply_*.py`) construct real `python-telegram-bot`
 real conversation logic, real database writes, and real keyboard/callback-data (or button-label)
 parsing — only the network-facing `Bot` methods (`send_message`, `edit_message_text`,
 `send_photo`, `answer_callback_query`) are replaced with recording mocks.
+
+`tests/web` drives the FastAPI app the same way: real HTTP requests via `fastapi.testclient.TestClient`
+(which also runs the app's real startup/shutdown lifespan, including the auto-book scheduler) against
+a real in-memory SQLite DB — nothing about routing, auth, or validation is mocked. The React SPA has
+no automated test suite (an internal lab tool at this scale); changes to it should be checked with
+`npm run dev` against a running `interface.mode=web` backend.
 
 ## Project conventions
 

@@ -28,6 +28,12 @@ def get_user_by_telegram_id(session: Session, telegram_id: int) -> User | None:
     ).scalar_one_or_none()
 
 
+def get_user_by_username(session: Session, username: str) -> User | None:
+    return session.execute(
+        select(User).where(User.username == username)
+    ).scalar_one_or_none()
+
+
 def list_users(session: Session, active_only: bool = True) -> list[User]:
     stmt = select(User)
     if active_only:

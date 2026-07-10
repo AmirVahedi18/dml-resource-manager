@@ -10,7 +10,13 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    # Bot identity. Nullable because web-interface accounts (see `username` below) have none --
+    # only one interface runs at a time (see `interface.mode`), so a given row only ever populates
+    # one identity or the other in practice.
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
+    # Web identity: local username/password login, managed entirely by dml_web/services/auth_service.py.
+    username: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     student_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     max_concurrent_gpus: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .env
 data/*.sqlite3
+data/*.sqlite3.bak*
+web/frontend/data/*.sqlite3
 logs/*.log
 logs/*.log.*
 !logs/.gitkeep
@@ -15,3 +17,6 @@ outputs/
 *.egg-info/
 .claude/
 logs/
+docker-compose.override.yml
+web/frontend/node_modules/
+web/frontend/dist/

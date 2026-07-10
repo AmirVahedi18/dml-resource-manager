@@ -18,6 +18,24 @@ class DatabaseConfig:
 
 
 @dataclass
+class InterfaceConfig:
+    # Which interface main.py runs: "bot" (existing Telegram polling loop, untouched) or "web"
+    # (FastAPI + SPA). Exactly one runs per deployment/process.
+    mode: str = "bot"
+
+
+@dataclass
+class WebConfig:
+    host: str = "0.0.0.0"
+    port: int = 8000
+    # Origins allowed to call the API with credentials (the SPA's dev-server and/or production
+    # origin). Secrets (JWT signing key, bootstrap admin credentials) live in .env, not here --
+    # see WEB_JWT_SECRET / WEB_ADMIN_USERNAME / WEB_ADMIN_PASSWORD.
+    cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173"])
+    access_token_expire_minutes: int = 720
+
+
+@dataclass
 class LoggingConfig:
     level: str = "INFO"
     dir: str = "logs"
@@ -93,7 +111,9 @@ class ListGridsConfig:
 
 @dataclass
 class AppConfig:
+    interface: InterfaceConfig = field(default_factory=InterfaceConfig)
     bot: BotConfig = field(default_factory=BotConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     regulation: RegulationConfig = field(default_factory=RegulationConfig)

@@ -1,0 +1,7 @@
+# FastAPI-facing settings for interface.mode=web (secrets like the JWT signing key and the
+# bootstrap admin's credentials live in .env, not here)
+host: 0.0.0.0
+port: 8000
+cors_origins:
+  - http://localhost:5173
+access_token_expire_minutes: 720

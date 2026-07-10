@@ -1,10 +1,41 @@
 services:
+  # interface.mode=bot -- the Telegram bot. Run with `docker compose --profile bot up -d --build`.
   dml-bot:
     build: .
     container_name: dml-resource-manager
     restart: unless-stopped
+    profiles: ["bot"]
     env_file:
       - .env
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+
+  # interface.mode=web -- the FastAPI backend + React SPA (dml-api + dml-web below). Run with
+  # `docker compose --profile web up -d --build`. Only one of the two profiles should be running
+  # against a given ./data volume at a time (see configs/interface/default.yaml).
+  dml-api:
+    build: .
+    container_name: dml-resource-manager-api
+    restart: unless-stopped
+    profiles: ["web"]
+    command: ["python", "main.py", "interface.mode=web"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    expose:
+      - "8000"
+
+  dml-web:
+    build: ./web/frontend
+    container_name: dml-resource-manager-web
+    restart: unless-stopped
+    profiles: ["web"]
+    depends_on:
+      - dml-api
+    ports:
+      # Host port the web UI is reachable on -- remap the left side (e.g. "80:80") if the host
+      # can bind privileged ports and you want it on the default HTTP port.
+      - "8080:80"

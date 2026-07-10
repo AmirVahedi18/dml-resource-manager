@@ -1,6 +1,8 @@
 defaults:
   - base_config
+  - interface: default
   - bot: default
+  - web: default
   - database: default
   - logging: default
   - regulation: default
