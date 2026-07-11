@@ -259,11 +259,15 @@ rows — only long-since-consumed `WatchSubscription` rows are pruned after
 always look back via **Admin Panel → Usage Report → Historical Availability**, picking a GPU and
 an arbitrary date window.
 
-The chart's time-bucket width matches the live schedule view's `schedule_chart.bucket_hours` for
-windows up to a week, so the two charts read the same way for the same range. Beyond a week it
-scales up (`dml_web/chart_data.py::historical_bucket_hours`: 12h buckets up to 30 days, 24h up to
-120 days, weekly beyond that), so a multi-month lookback doesn't render as thousands of unreadable
-buckets.
+The chart's time-bucket width always matches the live schedule view's `schedule_chart.bucket_hours`
+(1h by default), regardless of how wide a window is requested, so the two charts read the same way
+for any range.
+
+Each bucket's stacked usage is the per-user breakdown at that bucket's single busiest instant
+(`dml_web/chart_data.py::_peak_usage_breakdown`), not a flat sum of every reservation touching the
+bucket — two reservations that each cover only part of a bucket without ever being concurrent (one
+ends before the other starts) must not have their `ram_mb` added together, or a bucket's stacked
+total could read above the GPU's actual capacity.
 
 ### Local development
 

@@ -71,7 +71,6 @@ def historical_availability(
     reservations = reservation_service.list_reservations_for_gpu(
         session, gpu.id, range_start, range_end, include_cancelled=True
     )
-    bucket_hours = chart_data.historical_bucket_hours(days, app_cfg.schedule_chart.bucket_hours)
     return chart_data.build_occupancy_chart(
-        reservations, gpu.total_ram_mb, range_start, range_end, tz_name, bucket_hours
+        reservations, gpu.total_ram_mb, range_start, range_end, tz_name, app_cfg.schedule_chart.bucket_hours
     )
