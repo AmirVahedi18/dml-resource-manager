@@ -20,4 +20,3 @@ logs/
 docker-compose.override.yml
 web/frontend/node_modules/
 web/frontend/dist/
-TODO.md
