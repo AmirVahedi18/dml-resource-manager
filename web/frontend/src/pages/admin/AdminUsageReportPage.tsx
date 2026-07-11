@@ -104,8 +104,8 @@ export function AdminUsageReportPage() {
         <h2>
           <FontAwesomeIcon icon={faUser} /> By User
         </h2>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div className="field">
+        <div style={{ display: 'flex', gap: '8px 24px', flexWrap: 'wrap', marginBottom: 12 }}>
+          <div className="field" style={{ marginBottom: 0 }}>
             <Segmented
               value={userRangeKey}
               options={(Object.keys(RANGE_LABELS) as RangeKey[]).map((k) => ({ value: k, label: RANGE_LABELS[k] }))}
@@ -113,7 +113,7 @@ export function AdminUsageReportPage() {
               ariaLabel="Range"
             />
           </div>
-          <div className="field">
+          <div className="field" style={{ marginBottom: 0 }}>
             <Segmented
               value={userMetric}
               options={(Object.keys(USER_METRIC_LABELS) as UserMetric[]).map((k) => ({
@@ -179,7 +179,7 @@ export function AdminUsageReportPage() {
                 <label>Days forward</label>
                 <input type="number" min={1} value={histDays} onChange={(e) => setHistDays(Number(e.target.value))} />
               </div>
-              <button className="btn btn-primary" onClick={loadHistorical} disabled={!histGpuId}>
+              <button className="btn btn-primary btn-block" onClick={loadHistorical} disabled={!histGpuId}>
                 Show
               </button>
             </div>

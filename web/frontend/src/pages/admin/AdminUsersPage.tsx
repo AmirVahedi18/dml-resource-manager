@@ -224,44 +224,83 @@ export function AdminUsersPage() {
       <div className="card">
         <h2>Registered users</h2>
         {users && (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Username</th>
-                  <th>Status</th>
-                  <th>Admin</th>
-                  <th style={{ textAlign: 'center' }}>Max GPUs</th>
-                  <th style={{ textAlign: 'center' }}>Servers</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {users.map((u) => (
-                    <motion.tr key={u.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
-                      <td>{u.full_name}</td>
-                      <td>{u.username ?? <span className="muted">deleted</span>}</td>
-                      <td>
-                        <span className={`badge ${u.is_active ? 'badge-success' : 'badge-neutral'}`}>
-                          {u.is_active ? 'active' : 'inactive'}
-                        </span>
-                      </td>
-                      <td>{u.is_admin && <span className="badge badge-warn">admin</span>}</td>
-                      <td style={{ textAlign: 'center' }}>{u.max_concurrent_gpus}</td>
-                      <td style={{ textAlign: 'center' }}>{u.server_ids.length}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-sm" onClick={() => selectUser(u)}>
-                          Manage
-                        </button>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="table-scroll table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Username</th>
+                    <th>Status</th>
+                    <th>Admin</th>
+                    <th style={{ textAlign: 'center' }}>Max GPUs</th>
+                    <th style={{ textAlign: 'center' }}>Servers</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence>
+                    {users.map((u) => (
+                      <motion.tr key={u.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                        <td>{u.full_name}</td>
+                        <td>{u.username ?? <span className="muted">deleted</span>}</td>
+                        <td>
+                          <span className={`badge ${u.is_active ? 'badge-success' : 'badge-neutral'}`}>
+                            {u.is_active ? 'active' : 'inactive'}
+                          </span>
+                        </td>
+                        <td>{u.is_admin && <span className="badge badge-warn">admin</span>}</td>
+                        <td style={{ textAlign: 'center' }}>{u.max_concurrent_gpus}</td>
+                        <td style={{ textAlign: 'center' }}>{u.server_ids.length}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="btn btn-sm" onClick={() => selectUser(u)}>
+                            Manage
+                          </button>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card-list">
+              <AnimatePresence>
+                {users.map((u) => (
+                  <motion.div className="card-item" key={u.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                    <div className="card-item-title">{u.full_name}</div>
+                    <div className="card-item-row">
+                      <span className="muted">Username</span>
+                      <span>{u.username ?? <span className="muted">deleted</span>}</span>
+                    </div>
+                    <div className="card-item-row">
+                      <span className="muted">Status</span>
+                      <span className={`badge ${u.is_active ? 'badge-success' : 'badge-neutral'}`}>
+                        {u.is_active ? 'active' : 'inactive'}
+                      </span>
+                    </div>
+                    <div className="card-item-row">
+                      <span className="muted">Admin</span>
+                      <span>{u.is_admin ? <span className="badge badge-warn">admin</span> : '—'}</span>
+                    </div>
+                    <div className="card-item-row">
+                      <span className="muted">Max GPUs</span>
+                      <span>{u.max_concurrent_gpus}</span>
+                    </div>
+                    <div className="card-item-row">
+                      <span className="muted">Servers</span>
+                      <span>{u.server_ids.length}</span>
+                    </div>
+                    <div className="card-item-actions">
+                      <button className="btn btn-sm" onClick={() => selectUser(u)}>
+                        Manage
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </>
         )}
       </div>
 
@@ -294,7 +333,7 @@ export function AdminUsersPage() {
               />
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <button className="btn btn-primary" onClick={handleSaveDetails} disabled={detailsBusy}>
                 {detailsBusy ? 'Saving…' : 'Save changes'}
               </button>

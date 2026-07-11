@@ -97,7 +97,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                     <th>Start</th>
                     <th>End</th>
                     <th>RAM</th>
-                    <th />
+                    <th className="table-actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -111,7 +111,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                           <td className="num">{formatDateTime(new Date(r.start_time + 'Z'))}</td>
                           <td className="num">{formatDateTime(new Date(r.end_time + 'Z'))}</td>
                           <td className="num">{(r.ram_mb / 1024).toFixed(1)} GB</td>
-                          <td>
+                          <td className="table-actions">
                             <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
                               Cancel
                             </button>
@@ -183,7 +183,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                   <th>From</th>
                   <th>Until</th>
                   <th>Min RAM</th>
-                  <th />
+                  <th className="table-actions" />
                 </tr>
               </thead>
               <tbody>
@@ -196,7 +196,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                         <td className="num">{formatDateTime(new Date(w.range_start + 'Z'))}</td>
                         <td className="num">{formatDateTime(new Date(w.range_end + 'Z'))}</td>
                         <td className="num">{(w.min_ram_needed_mb / 1024).toFixed(1)} GB</td>
-                        <td>
+                        <td className="table-actions">
                           <button className="btn btn-sm btn-danger" onClick={() => handleCancelWatch(w.id)}>
                             Cancel
                           </button>

@@ -64,7 +64,7 @@ export function AdminRegulationPage() {
               </motion.div>
             ))}
         </AnimatePresence>
-        <button className="btn btn-primary" onClick={handleSave} disabled={busy || !regulation}>
+        <button className="btn btn-primary" style={{ display: 'flex', marginLeft: 'auto' }} onClick={handleSave} disabled={busy || !regulation}>
           {busy ? 'Saving…' : 'Save regulation'}
         </button>
       </div>

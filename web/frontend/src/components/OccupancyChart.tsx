@@ -24,8 +24,14 @@ function fmtShort(iso: string): string {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export function OccupancyChart({ data }: { data: OccupancyChartData }) {
-  const [view, setView] = useState<'bars' | 'timeline'>('bars')
+interface PreviewWindow {
+  start: string
+  end: string
+  ramMb: number
+}
+
+export function OccupancyChart({ data, preview = null }: { data: OccupancyChartData; preview?: PreviewWindow | null }) {
+  const [view, setView] = useState<'bars' | 'timeline'>(() => (preview ? 'timeline' : 'bars'))
   const { label: unitLabel, divisor } = displayUnit(data.capacity_mb)
 
   const totals = useMemo(() => {
@@ -39,6 +45,10 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
   const named = ranked.slice(0, MAX_NAMED_USERS)
   const other = ranked.slice(MAX_NAMED_USERS)
 
+  const previewStartMs = preview ? new Date(preview.start).getTime() : null
+  const previewEndMs = preview ? new Date(preview.end).getTime() : null
+  const hasPreview = !!preview && preview.ramMb > 0 && previewStartMs !== null && previewEndMs !== null && previewEndMs > previewStartMs
+
   const barData = useMemo(
     () =>
       data.buckets.map((b) => {
@@ -47,9 +57,16 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
         if (other.length) {
           row['Other'] = other.reduce((sum, name) => sum + (b.usage[name] ?? 0), 0) / divisor
         }
+        if (hasPreview) {
+          const bucketStartMs = new Date(b.start).getTime()
+          const bucketEndMs = new Date(b.end).getTime()
+          const overlaps = bucketStartMs < (previewEndMs as number) && bucketEndMs > (previewStartMs as number)
+          row['__preview'] = overlaps ? preview!.ramMb / divisor : 0
+        }
         return row
       }),
-    [data.buckets, named, other, divisor]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.buckets, named, other, divisor, hasPreview, previewStartMs, previewEndMs, preview?.ramMb]
   )
 
   const capacityVal = data.capacity_mb / divisor
@@ -135,6 +152,16 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
               <Bar key={name} dataKey={name} stackId="usage" fill={CATEGORICAL_COLORS[i]} />
             ))}
             {other.length > 0 && <Bar dataKey="Other" stackId="usage" fill={OTHER_COLOR} />}
+            {hasPreview && (
+              <Bar
+                dataKey="__preview"
+                stackId="usage"
+                fill="var(--accent)"
+                fillOpacity={0.4}
+                stroke="var(--accent)"
+                strokeDasharray="3 3"
+              />
+            )}
             <ReferenceLine y={capacityVal} stroke="currentColor" strokeDasharray="4 4" strokeOpacity={0.6} />
           </BarChart>
         </ResponsiveContainer>
@@ -143,13 +170,66 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
       {view === 'timeline' && (
         <div>
           <AnimatePresence>
-            {ranked.length === 0 && (
+            {ranked.length === 0 && !hasPreview && (
               <motion.p className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
                 No reservations in this range.
               </motion.p>
             )}
           </AnimatePresence>
           <AnimatePresence>
+          {hasPreview && (
+            <motion.div
+              key="__preview"
+              layout
+              variants={fadeSlideVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}
+            >
+              <div className="occ-timeline-label muted">Your booking</div>
+              <div
+                style={{
+                  position: 'relative',
+                  flex: 1,
+                  height: 22,
+                  background: 'var(--surface-alt)',
+                  borderRadius: 4,
+                  overflow: 'hidden',
+                }}
+              >
+                {(() => {
+                  const segStart = Math.max(previewStartMs as number, rangeStartMs)
+                  const segEnd = Math.min(previewEndMs as number, rangeStartMs + totalSpan)
+                  if (segEnd <= segStart) return null
+                  const left = ((segStart - rangeStartMs) / totalSpan) * 100
+                  const width = Math.max(((segEnd - segStart) / totalSpan) * 100, 0.5)
+                  return (
+                    <div
+                      title={`${(preview!.ramMb / divisor).toFixed(1)} ${unitLabel} · ${fmtShort(preview!.start)} → ${fmtShort(preview!.end)} (hypothetical)`}
+                      style={{
+                        position: 'absolute',
+                        left: `${Math.min(Math.max(left, 0), 100)}%`,
+                        width: `${width}%`,
+                        top: 2,
+                        bottom: 2,
+                        background: 'var(--accent)',
+                        opacity: 0.45,
+                        border: '1px dashed var(--accent)',
+                        borderRadius: 3,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <span className="occ-segment-label">{(preview!.ramMb / divisor).toFixed(1)} {unitLabel}</span>
+                    </div>
+                  )
+                })()}
+              </div>
+            </motion.div>
+          )}
           {ranked.map((name) => (
             <motion.div
               key={name}
@@ -194,8 +274,14 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
                           bottom: 2,
                           background: colors[name] ?? OTHER_COLOR,
                           borderRadius: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
                         }}
-                      />
+                      >
+                        <span className="occ-segment-label">{(seg.ram_mb / divisor).toFixed(1)} {unitLabel}</span>
+                      </div>
                     )
                   })}
               </div>
@@ -205,7 +291,7 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
 
           {/* Time ruler so the floating bars are readable against actual dates/times. */}
           <AnimatePresence>
-            {ranked.length > 0 && (
+            {(ranked.length > 0 || hasPreview) && (
               <motion.div className="occ-axis" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
                 <div className="occ-timeline-label" aria-hidden />
                 <div className="occ-axis-track">
@@ -239,6 +325,12 @@ export function OccupancyChart({ data }: { data: OccupancyChartData }) {
           <span className="chart-legend-item">
             <span className="chart-legend-swatch" style={{ background: OTHER_COLOR }} />
             Other ({other.length})
+          </span>
+        )}
+        {hasPreview && (
+          <span className="chart-legend-item">
+            <span className="chart-legend-swatch chart-legend-swatch-preview" />
+            Your booking (preview)
           </span>
         )}
         <span className="chart-legend-item muted">Capacity: {capacityVal.toFixed(0)} {unitLabel}</span>

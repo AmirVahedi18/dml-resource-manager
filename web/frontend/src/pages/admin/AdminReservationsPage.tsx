@@ -202,7 +202,7 @@ export function AdminReservationsPage() {
               <FontAwesomeIcon icon={faTrash} /> Cancel ALL Reservations lab-wide
             </h2>
             <p className="muted">This cannot be undone. Type "{CONFIRM_PHRASE}" to confirm.</p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
               <input
                 className="text-input"
                 style={{ maxWidth: 220 }}

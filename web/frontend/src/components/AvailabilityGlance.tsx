@@ -29,6 +29,8 @@ interface Props {
   onDaysChange: (days: number) => void
   chart: OccupancyChartData | null
   tz: string
+  /** Hypothetical booking currently being configured in the form below, if any. */
+  preview?: { start: string; end: string; ramMb: number } | null
 }
 
 function gb(mb: number): string {
@@ -44,6 +46,7 @@ export function AvailabilityGlance({
   onDaysChange,
   chart,
   tz,
+  preview = null,
 }: Props) {
   const toast = useToast()
   const [servers, setServers] = useState<ServerOverviewOut[] | null>(null)
@@ -175,7 +178,7 @@ export function AvailabilityGlance({
           <AnimatePresence mode="wait">
             {chart ? (
               <motion.div key="chart" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
-                <OccupancyChart data={chart} />
+                <OccupancyChart key={selectedGpuId} data={chart} preview={preview} />
 
                 <div className="glance-range-picker">
                   <div className="segmented">

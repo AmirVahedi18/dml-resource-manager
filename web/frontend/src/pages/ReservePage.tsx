@@ -7,7 +7,7 @@ import { reservationsApi, scheduleApi, watchesApi } from '../api/endpoints'
 import type { GpuOut, OccupancyChartData, RegulationOut } from '../api/types'
 import { AvailabilityGlance } from '../components/AvailabilityGlance'
 import { DatePicker } from '../components/DatePicker'
-import { GpuPicker } from '../components/GpuPicker'
+import { InfoTooltip } from '../components/InfoTooltip'
 import { MyReservationsCard } from '../components/MyReservationsCard'
 import { TimeSelect } from '../components/TimeSelect'
 import { useToast } from '../components/Toast'
@@ -99,7 +99,6 @@ function slotOptionsForLocalDay(dateStr: string, tz: string, slotMinutes: number
 }
 
 export function ReservePage() {
-  const [serverId, setServerId] = useState<number | null>(null)
   const [gpuId, setGpuId] = useState<number | null>(null)
   const [gpu, setGpu] = useState<GpuOut | null>(null)
   const [regulation, setRegulation] = useState<RegulationOut | null>(null)
@@ -168,14 +167,20 @@ export function ReservePage() {
   }
 
   // Preselect a GPU straight from the "Available now" glance.
-  function handlePick(pickedServerId: number, pickedGpu: GpuOut) {
-    setServerId(pickedServerId)
+  function handlePick(_serverId: number, pickedGpu: GpuOut) {
     setGpuId(pickedGpu.id)
     setGpu(pickedGpu)
   }
 
   const startUtc = useMemo(() => new Date(startValue), [startValue])
   const endUtc = useMemo(() => new Date(startUtc.getTime() + durationHours * 3600_000), [startUtc, durationHours])
+
+  // Hypothetical booking preview, shown translucently in the availability diagram as the
+  // user fills in the form — updates live as start/duration/RAM change.
+  const preview = useMemo(
+    () => (gpuId ? { start: startUtc.toISOString(), end: endUtc.toISOString(), ramMb: Math.round(ramGb * 1024) } : null),
+    [gpuId, startUtc, endUtc, ramGb],
+  )
 
   // Debounced: how much RAM is actually free throughout the picked window, so the user can
   // judge feasibility before submitting -- durationHours changes on every keystroke, so this
@@ -194,17 +199,26 @@ export function ReservePage() {
     return () => clearTimeout(timer)
   }, [gpuId, startUtc, endUtc])
 
+  // Back to the same defaults the form starts with, so a repeat booking doesn't inherit the
+  // just-submitted window.
+  function resetForm() {
+    setStartDate(dateStrFromParts(defaultStartParts(tz)))
+    setStartValue(new Date(Date.now() + 60 * 60 * 1000).toISOString())
+    setDurationHours(1)
+    setRamGb(4)
+  }
+
   async function handleSubmit() {
     if (!gpuId) return
     setBusy(true)
     try {
       await reservationsApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
       toast.success('Reservation created.')
+      resetForm()
       setReloadSignal((n) => n + 1) // refresh glance + My Reservations
       const rangeStart = new Date()
       const rangeEnd = new Date(rangeStart.getTime() + days * 86400_000)
       scheduleApi.availability(gpuId, rangeStart.toISOString(), rangeEnd.toISOString()).then(setChart)
-      scheduleApi.freeRam(gpuId, startUtc.toISOString(), endUtc.toISOString()).then((r) => setFreeRamMb(r.free_ram_mb))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -244,98 +258,83 @@ export function ReservePage() {
         onDaysChange={setDays}
         chart={chart}
         tz={tz}
+        preview={preview}
       />
 
       <div className="card card-feature">
-        <div className="picker-layout">
-          <div className="picker-layout-left">
-            <GpuPicker
-              serverId={serverId}
-              gpuId={gpuId}
-              onGpuChange={(sId, gId, g) => {
-                setServerId(sId)
-                setGpuId(gId)
-                setGpu(g)
-              }}
-            />
-          </div>
+        <AnimatePresence mode="wait">
+          {!gpuId && (
+            <motion.p key="prompt" className="muted picker-placeholder" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+              Pick a GPU above to see its availability and book a slot.
+            </motion.p>
+          )}
 
-          <div className="picker-layout-right">
-            <AnimatePresence mode="wait">
-              {!gpuId && (
-                <motion.p key="prompt" className="muted picker-placeholder" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
-                  Pick a GPU on the left to see its availability and book a slot.
-                </motion.p>
-              )}
+          {gpuId && (!gpu || !regulation) && (
+            <motion.p key="loading" className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+              Loading…
+            </motion.p>
+          )}
 
-              {gpuId && (!gpu || !regulation) && (
-                <motion.p key="loading" className="muted" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
-                  Loading…
-                </motion.p>
-              )}
-
-              {gpuId && gpu && regulation && (
-                <motion.div key="form" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
-                <h2>Reservation details</h2>
-                <div className="row row-tight">
-                  <div className="field">
-                    <label>Start Date ({tz})</label>
-                    <DatePicker value={startDate} min={todayStr} max={maxDateStr} onChange={handleDateChange} />
-                  </div>
-                  <div className="field">
-                    <label>Start Time ({tz})</label>
-                    <TimeSelect
-                      value={startValue}
-                      options={slotOptions}
-                      disabled={slotOptions.length === 0}
-                      onChange={setStartValue}
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Duration (hours, max {regulation.max_duration_hours})</label>
-                    <input
-                      type="number"
-                      min={slotMinutes / 60}
-                      step={slotMinutes / 60}
-                      max={regulation.max_duration_hours}
-                      value={durationHours}
-                      onChange={(e) => setDurationHours(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="field">
-                    <label>RAM (GB, max {Math.min(regulation.max_ram_per_reservation_gb, gpu.total_ram_mb / 1024).toFixed(0)})</label>
-                    <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
-                  </div>
-                </div>
-                <p className="muted">
-                  {freeRamMb == null ? (
-                    'Checking free RAM for this window…'
-                  ) : (
-                    <>
-                      Free during this window: <strong>{(freeRamMb / 1024).toFixed(1)} GB</strong> of{' '}
-                      {(gpu.total_ram_mb / 1024).toFixed(0)} GB
-                    </>
-                  )}
-                </p>
-                <p className="muted">
-                  Ends: <span className="mono">{formatDateTime(endUtc, tz)}</span> ({tz})
-                </p>
-                <button className="btn btn-primary btn-lg btn-block" onClick={handleSubmit} disabled={busy}>
-                  {busy ? 'Reserving…' : 'Reserve this GPU'}
-                </button>
-
-                <p className="muted" style={{ marginTop: '1rem' }}>
-                  Not enough free RAM right now for this window? Watch it instead — you'll be auto-booked the
-                  moment it frees up.
-                </p>
-                <button className="btn btn-secondary btn-block" onClick={handleCreateWatch} disabled={watchBusy}>
-                  {watchBusy ? 'Creating watch…' : 'Watch this instead'}
-                </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+          {gpuId && gpu && regulation && (
+            <motion.div key="form" variants={fadeVariants} initial="initial" animate="animate" exit="exit">
+            <h2>Reservation details</h2>
+            <div className="row row-tight">
+              <div className="field">
+                <label>Start Date ({tz})</label>
+                <DatePicker value={startDate} min={todayStr} max={maxDateStr} onChange={handleDateChange} />
+              </div>
+              <div className="field">
+                <label>Start Time ({tz})</label>
+                <TimeSelect
+                  value={startValue}
+                  options={slotOptions}
+                  disabled={slotOptions.length === 0}
+                  onChange={setStartValue}
+                />
+              </div>
+              <div className="field">
+                <label>Duration (hours, max {regulation.max_duration_hours})</label>
+                <input
+                  type="number"
+                  min={slotMinutes / 60}
+                  step={slotMinutes / 60}
+                  max={regulation.max_duration_hours}
+                  value={durationHours}
+                  onChange={(e) => setDurationHours(Number(e.target.value))}
+                />
+              </div>
+              <div className="field">
+                <label>RAM (GB, max {Math.min(regulation.max_ram_per_reservation_gb, gpu.total_ram_mb / 1024).toFixed(0)})</label>
+                <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
+              </div>
+            </div>
+            <div className="reserve-window-info">
+              <p className="muted">
+                {freeRamMb == null ? (
+                  'Checking free RAM for this window…'
+                ) : (
+                  <>
+                    Free during this window: <strong>{(freeRamMb / 1024).toFixed(1)} GB</strong> of{' '}
+                    {(gpu.total_ram_mb / 1024).toFixed(0)} GB
+                  </>
+                )}
+              </p>
+              <p className="muted">
+                Ends: <span className="mono">{formatDateTime(endUtc, tz)}</span> ({tz})
+              </p>
+            </div>
+            <div className="reserve-actions">
+              <button className="btn btn-primary btn-lg" onClick={handleSubmit} disabled={busy}>
+                {busy ? 'Reserving…' : 'Reserve this GPU'}
+              </button>
+              <button className="btn btn-secondary btn-lg" onClick={handleCreateWatch} disabled={watchBusy}>
+                {watchBusy ? 'Creating watch…' : 'Watch this instead'}
+              </button>
+              <InfoTooltip text="Not enough free RAM right now for this window? Watch it instead — you'll be auto-booked the moment it frees up." />
+            </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <MyReservationsCard reloadSignal={reloadSignal} />

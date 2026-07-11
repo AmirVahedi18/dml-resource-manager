@@ -159,36 +159,59 @@ export function AdminServersPage() {
       <div className="card">
         <h2>Servers</h2>
         {servers && (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {servers.map((s) => (
-                    <motion.tr key={s.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
-                      <td>{s.name}</td>
-                      <td>
-                        <span className={`badge ${s.is_active ? 'badge-success' : 'badge-neutral'}`}>
-                          {s.is_active ? 'active' : 'inactive'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-sm" onClick={() => selectServer(s)}>
-                          Manage
-                        </button>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="table-scroll table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence>
+                    {servers.map((s) => (
+                      <motion.tr key={s.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                        <td>{s.name}</td>
+                        <td>
+                          <span className={`badge ${s.is_active ? 'badge-success' : 'badge-neutral'}`}>
+                            {s.is_active ? 'active' : 'inactive'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="btn btn-sm" onClick={() => selectServer(s)}>
+                            Manage
+                          </button>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card-list">
+              <AnimatePresence>
+                {servers.map((s) => (
+                  <motion.div className="card-item" key={s.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                    <div className="card-item-title">{s.name}</div>
+                    <div className="card-item-row">
+                      <span className="muted">Status</span>
+                      <span className={`badge ${s.is_active ? 'badge-success' : 'badge-neutral'}`}>
+                        {s.is_active ? 'active' : 'inactive'}
+                      </span>
+                    </div>
+                    <div className="card-item-actions">
+                      <button className="btn btn-sm" onClick={() => selectServer(s)}>
+                        Manage
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </>
         )}
       </div>
 
@@ -200,13 +223,13 @@ export function AdminServersPage() {
             <div className="field" style={{ marginBottom: 0 }}>
               <label>Rename</label>
               <div style={{ display: 'flex', gap: 6 }}>
-                <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+                <input style={{ flex: 1 }} value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
                 <button className="btn btn-sm" onClick={handleRename}>
                   Save
                 </button>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={handleToggleActive}>
                 <FontAwesomeIcon icon={selected.is_active ? faBan : faCheck} />{' '}
                 {selected.is_active ? 'Deactivate' : 'Activate'}
@@ -218,7 +241,7 @@ export function AdminServersPage() {
           </div>
 
           <h3>GPUs</h3>
-          <div className="table-scroll">
+          <div className="table-scroll table-wrap">
             <table>
               <thead>
                 <tr>
@@ -241,7 +264,7 @@ export function AdminServersPage() {
                           {g.is_active ? 'active' : 'inactive'}
                         </span>
                       </td>
-                      <td style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <td style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
                         <button className="btn btn-sm" onClick={() => setPendingRenameGpu(g)}>
                           Rename
                         </button>
@@ -257,6 +280,39 @@ export function AdminServersPage() {
                 </AnimatePresence>
               </tbody>
             </table>
+          </div>
+
+          <div className="card-list">
+            <AnimatePresence>
+              {gpus.map((g) => (
+                <motion.div className="card-item" key={g.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
+                  <div className="card-item-title">
+                    GPU{g.index_on_server} — {g.model_name}
+                  </div>
+                  <div className="card-item-row">
+                    <span className="muted">RAM</span>
+                    <span>{(g.total_ram_mb / 1024).toFixed(0)} GB</span>
+                  </div>
+                  <div className="card-item-row">
+                    <span className="muted">Status</span>
+                    <span className={`badge ${g.is_active ? 'badge-success' : 'badge-neutral'}`}>
+                      {g.is_active ? 'active' : 'inactive'}
+                    </span>
+                  </div>
+                  <div className="card-item-actions">
+                    <button className="btn btn-sm" onClick={() => setPendingRenameGpu(g)}>
+                      Rename
+                    </button>
+                    <button className="btn btn-sm" onClick={() => handleToggleGpuActive(g)}>
+                      {g.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button className="btn btn-sm btn-danger" onClick={() => setPendingDeleteGpu(g)}>
+                      Delete
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
           <h3 style={{ marginTop: 16 }}>Add GPU</h3>

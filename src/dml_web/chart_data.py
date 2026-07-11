@@ -37,18 +37,20 @@ def _bucket_boundaries(
     return boundaries
 
 
-def historical_bucket_hours(days: int) -> float:
+def historical_bucket_hours(days: int, base_hours: float) -> float:
     """Scales an admin-chosen historical window's bucket size so a multi-month lookback doesn't
-    render as thousands of buckets (reservations are kept forever, never pruned by cleanup)."""
-    if days <= 2:
-        return 1.0
+    render as thousands of buckets (reservations are kept forever, never pruned by cleanup).
+
+    Windows up to a week use `base_hours` unscaled, matching the live schedule view's bucket
+    size (`schedule_chart.bucket_hours`) so the two charts read the same way for the same range.
+    """
     if days <= 7:
-        return 3.0
+        return base_hours
     if days <= 30:
-        return 12.0
+        return max(base_hours, 12.0)
     if days <= 120:
-        return 24.0
-    return 24.0 * 7
+        return max(base_hours, 24.0)
+    return max(base_hours, 24.0 * 7)
 
 
 def _occupied_window(r: Reservation) -> tuple[datetime, datetime] | None:
