@@ -21,8 +21,13 @@ COPY main.py ./
 RUN useradd --create-home --uid 1000 dmlapp \
     && mkdir -p /app/data /app/logs \
     && chown -R dmlapp:dmlapp /app
-USER dmlapp
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 VOLUME ["/app/data", "/app/logs"]
 
+# Container starts as root so the entrypoint can fix ownership on bind-mounted
+# ./data and ./logs (host ownership varies per deploy), then drops to dmlapp.
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "main.py"]
