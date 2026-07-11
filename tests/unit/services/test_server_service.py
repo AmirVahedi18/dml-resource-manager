@@ -23,6 +23,22 @@ def test_duplicate_gpu_index_raises(db_session):
         ss.add_gpu(db_session, server, 0, "RTX 3090", 24576)
 
 
+def test_add_gpu_reuses_index_of_deleted_gpu(db_session):
+    server = ss.create_server(db_session, "lab-server-1")
+    old_gpu = ss.add_gpu(db_session, server, 1, "RTX 3090", 24576)
+    ss.delete_gpu(db_session, old_gpu)
+
+    new_gpu = ss.add_gpu(db_session, server, 1, "GTX 1080 Ti", 12288)
+
+    assert new_gpu.id == old_gpu.id
+    assert new_gpu.model_name == "GTX 1080 Ti"
+    assert new_gpu.total_ram_mb == 12288
+    assert new_gpu.is_active is True
+    assert new_gpu.deleted_at is None
+    listed = ss.list_gpus(db_session, server)
+    assert [g.id for g in listed] == [new_gpu.id]
+
+
 def test_list_gpus_excludes_inactive_by_default(db_session):
     server = ss.create_server(db_session, "lab-server-1")
     active_gpu = ss.add_gpu(db_session, server, 0, "RTX 4090", 24576)

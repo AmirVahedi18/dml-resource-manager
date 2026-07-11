@@ -43,9 +43,19 @@ def add_gpu(
         select(GPU).where(GPU.server_id == server.id, GPU.index_on_server == index_on_server)
     ).scalar_one_or_none()
     if existing is not None:
-        raise GPUIndexConflictError(
-            f"GPU index {index_on_server} already exists on server '{server.name}'"
-        )
+        if existing.deleted_at is None:
+            raise GPUIndexConflictError(
+                f"GPU index {index_on_server} already exists on server '{server.name}'"
+            )
+        # The index belongs to a soft-deleted GPU (kept only so old reservations still resolve
+        # `reservation.gpu`). The DB has a unique constraint on (server_id, index_on_server), so a
+        # new row can't reuse this index -- revive the existing one instead.
+        existing.model_name = model_name
+        existing.total_ram_mb = total_ram_mb
+        existing.is_active = True
+        existing.deleted_at = None
+        session.flush()
+        return existing
     gpu = GPU(
         server_id=server.id,
         index_on_server=index_on_server,
