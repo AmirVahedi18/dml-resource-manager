@@ -46,3 +46,22 @@ def test_duplicate_gpu_index_returns_409(client, admin_headers, server_and_gpu):
         json={"index_on_server": gpu.index_on_server, "model_name": "A100", "total_ram_mb": 40960},
     )
     assert r.status_code == 409
+
+
+def test_add_gpu_rejects_non_positive_total_ram_mb(client, admin_headers, server_and_gpu):
+    server, _ = server_and_gpu
+    for total_ram_mb in (0, -100):
+        r = client.post(
+            f"/api/admin/servers/{server.id}/gpus", headers=admin_headers,
+            json={"index_on_server": 99, "model_name": "A100", "total_ram_mb": total_ram_mb},
+        )
+        assert r.status_code == 422
+
+
+def test_add_gpu_rejects_negative_index(client, admin_headers, server_and_gpu):
+    server, _ = server_and_gpu
+    r = client.post(
+        f"/api/admin/servers/{server.id}/gpus", headers=admin_headers,
+        json={"index_on_server": -1, "model_name": "A100", "total_ram_mb": 40960},
+    )
+    assert r.status_code == 422

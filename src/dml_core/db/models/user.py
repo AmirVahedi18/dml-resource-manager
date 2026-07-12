@@ -26,3 +26,4 @@ class User(Base):
 
     reservations: Mapped[list["Reservation"]] = relationship(back_populates="user")
     watches: Mapped[list["WatchSubscription"]] = relationship(back_populates="user")
+    feedback: Mapped[list["Feedback"]] = relationship(back_populates="user")

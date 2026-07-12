@@ -40,6 +40,7 @@ def test_overview_reflects_currently_active_reservation(
             start_time=now - timedelta(minutes=30),
             end_time=now + timedelta(minutes=30),
             ram_mb=4096,
+            description="training run",
             status=ReservationStatus.ACTIVE,
         )
     )

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ServerAdminOut(BaseModel):
@@ -31,9 +31,9 @@ class GpuAdminOut(BaseModel):
 
 
 class GpuCreateRequest(BaseModel):
-    index_on_server: int
+    index_on_server: int = Field(ge=0)
     model_name: str
-    total_ram_mb: int
+    total_ram_mb: int = Field(gt=0)
 
 
 class GpuRenameRequest(BaseModel):

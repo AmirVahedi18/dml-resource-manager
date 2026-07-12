@@ -1,10 +1,9 @@
 # Seed values for the singleton Regulation DB row, used only on first run.
 # After that, the DB row is authoritative; admins edit it live via the bot.
 max_ram_per_reservation_gb: 80
-max_duration_hours: 120
+max_duration_hours: 240 
 booking_horizon_days: 30
-min_reservation_slot_minutes: 60
-max_active_reservations_per_user: 6
-# Minutes of required notice before start to self-cancel; 0 = no cutoff (students can cancel
-# anytime before start). Admin cancellations always bypass this.
-min_cancellation_notice_minutes: 0
+min_reservation_slot_minutes: 30
+max_active_reservations_per_user: 3
+# When a GPU/server is reactivated, resumed reservations restart this many minutes from now.
+reactivation_delay_minutes: 60

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from dml_core.db.models.user import User
 from dml_core.db.models.watch import WatchSubscription
-from dml_core.services import reservation_service, server_service, watch_service
+from dml_core.services import regulation_service, reservation_service, server_service, watch_service
 from dml_web import access
 from dml_web.deps import get_current_user, get_session
 from dml_web.schemas.watches import WatchCreate, WatchOut
@@ -38,8 +38,10 @@ def create_watch(
 
     # Web offers auto-book watches only -- there's no notification channel to fall back to a
     # plain "just notify" for (see the web-interface plan's "Watches" decision).
+    regulation = regulation_service.get_regulation(session)
     return watch_service.create_watch(
-        session, user, gpu, payload.range_start, payload.range_end, payload.min_ram_needed_mb, auto_book=True
+        session, user, gpu, payload.range_start, payload.range_end, payload.min_ram_needed_mb, regulation,
+        auto_book=True, description=payload.description,
     )
 
 

@@ -13,12 +13,15 @@ class AdminReservationOut(BaseModel):
     start_time: datetime
     end_time: datetime
     ram_mb: int
+    description: str | None
     status: str
 
 
-class UserWithReservationsOut(BaseModel):
-    id: int
-    full_name: str
+class AdminReservationListOut(BaseModel):
+    items: list[AdminReservationOut]
+    total: int
+    page: int
+    page_size: int
 
 
 class CancelAllRequest(BaseModel):

@@ -7,6 +7,7 @@ class UserAdminOut(BaseModel):
     full_name: str
     is_active: bool
     is_admin: bool
+    is_bootstrap: bool
     max_concurrent_gpus: int
     server_ids: list[int]
 

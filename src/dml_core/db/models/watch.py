@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from dml_core.db.base import Base
@@ -17,6 +17,10 @@ class WatchSubscription(Base):
     range_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     range_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     min_ram_needed_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Required (mirrors Reservation.description), carried over onto the reservation created by
+    # attempt_auto_book so the description a student gave when watching survives into the
+    # eventual booking. Admin-only to read, same as Reservation.description.
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
     # Opt-in: instead of just notifying, automatically book the freed window (from whenever it
     # frees through `range_end`, capped by the regulation's max duration) the instant a match is
     # found. Falls back to a plain notification if the auto-book attempt is rejected by any

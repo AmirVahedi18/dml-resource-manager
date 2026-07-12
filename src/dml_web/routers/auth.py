@@ -17,8 +17,15 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)) -> Tok
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)) -> User:
-    return current_user
+def me(current_user: User = Depends(get_current_user)) -> UserOut:
+    return UserOut(
+        id=current_user.id,
+        username=current_user.username,
+        full_name=current_user.full_name,
+        is_admin=current_user.is_admin,
+        is_bootstrap=auth_service.is_bootstrap_admin(current_user.username),
+        max_concurrent_gpus=current_user.max_concurrent_gpus,
+    )
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

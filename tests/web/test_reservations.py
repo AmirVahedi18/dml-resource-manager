@@ -16,7 +16,8 @@ def test_create_reservation_requires_server_access(client, student_user, server_
     headers = login(client, "stud1", "studpass123")
     start, end = _future_slot()
     r = client.post(
-        "/api/reservations", headers=headers, json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096}
+        "/api/reservations", headers=headers,
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096, "description": "training run"},
     )
     assert r.status_code == 403
 
@@ -27,7 +28,8 @@ def test_create_list_cancel_reservation(client, student_with_access, server_and_
     start, end = _future_slot()
 
     r = client.post(
-        "/api/reservations", headers=headers, json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096}
+        "/api/reservations", headers=headers,
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096, "description": "training run"},
     )
     assert r.status_code == 201, r.text
     reservation_id = r.json()["id"]
@@ -43,6 +45,47 @@ def test_create_list_cancel_reservation(client, student_with_access, server_and_
     assert client.get("/api/reservations", headers=headers).json() == []
 
 
+def test_create_reservation_description_is_mandatory(client, student_with_access, server_and_gpu):
+    _, gpu = server_and_gpu
+    headers = login(client, "stud1", "studpass123")
+    start, end = _future_slot()
+
+    r = client.post(
+        "/api/reservations", headers=headers,
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096},
+    )
+    assert r.status_code == 422
+
+    r = client.post(
+        "/api/reservations", headers=headers,
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096, "description": "   "},
+    )
+    assert r.status_code == 422
+
+
+def test_reservation_description_not_exposed_to_student_but_stored(client, db_session, student_with_access, server_and_gpu):
+    _, gpu = server_and_gpu
+    headers = login(client, "stud1", "studpass123")
+    start, end = _future_slot()
+
+    r = client.post(
+        "/api/reservations", headers=headers,
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 4096, "description": "NeurIPS ablations"},
+    )
+    assert r.status_code == 201, r.text
+    reservation_id = r.json()["id"]
+    assert "description" not in r.json()
+
+    r = client.get("/api/reservations", headers=headers)
+    assert "description" not in r.json()[0]
+
+    from dml_core.db.models.reservation import Reservation
+
+    db_session.expire_all()
+    stored = db_session.get(Reservation, reservation_id)
+    assert stored.description == "NeurIPS ablations"
+
+
 def test_create_reservation_exceeding_ram_returns_422(client, student_with_access, server_and_gpu):
     _, gpu = server_and_gpu
     headers = login(client, "stud1", "studpass123")
@@ -50,10 +93,10 @@ def test_create_reservation_exceeding_ram_returns_422(client, student_with_acces
     r = client.post(
         "/api/reservations",
         headers=headers,
-        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 999_999},
+        json={"gpu_id": gpu.id, "start_time": start, "end_time": end, "ram_mb": 999_999, "description": "training run"},
     )
     assert r.status_code == 422
-    assert "ram_mb" in r.json()["detail"]
+    assert "RAM" in r.json()["detail"]
 
 
 def test_create_reservation_unaligned_slot_returns_422(client, student_with_access, server_and_gpu):
@@ -64,7 +107,10 @@ def test_create_reservation_unaligned_slot_returns_422(client, student_with_acce
     r = client.post(
         "/api/reservations",
         headers=headers,
-        json={"gpu_id": gpu.id, "start_time": start_dt.isoformat(), "end_time": end_dt.isoformat(), "ram_mb": 4096},
+        json={
+            "gpu_id": gpu.id, "start_time": start_dt.isoformat(), "end_time": end_dt.isoformat(),
+            "ram_mb": 4096, "description": "training run",
+        },
     )
     assert r.status_code == 422
 
@@ -78,7 +124,7 @@ def test_cancel_other_users_reservation_returns_404(client, db_session, student_
     regulation = regulation_service.get_regulation(db_session)
     start_dt = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
     reservation = reservation_service.create_reservation(
-        db_session, other, gpu, start_dt, start_dt + timedelta(hours=1), 4096, regulation
+        db_session, other, gpu, start_dt, start_dt + timedelta(hours=1), 4096, regulation, description="training run"
     )
     db_session.commit()
 

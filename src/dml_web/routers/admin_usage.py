@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from dml_core.config.schema import AppConfig
 from dml_core.db.models.user import User
-from dml_core.services import reservation_service, server_service, usage_service
+from dml_core.services import regulation_service, reservation_service, server_service, usage_service
 from dml_core.utils.time_utils import local_day_range_utc, to_naive_utc
 from dml_web import chart_data
 from dml_web.deps import get_app_cfg, get_session, require_admin
@@ -71,6 +71,7 @@ def historical_availability(
     reservations = reservation_service.list_reservations_for_gpu(
         session, gpu.id, range_start, range_end, include_cancelled=True
     )
+    regulation = regulation_service.get_regulation(session)
     return chart_data.build_occupancy_chart(
-        reservations, gpu.total_ram_mb, range_start, range_end, tz_name, app_cfg.schedule_chart.bucket_hours
+        reservations, gpu.total_ram_mb, range_start, range_end, tz_name, regulation.min_reservation_slot_minutes
     )

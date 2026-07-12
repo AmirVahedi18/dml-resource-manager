@@ -1,11 +1,16 @@
 import { api } from './client'
 import type {
-  AdminReservationOut,
+  AdminFeedbackListOut,
+  AdminReservationListOut,
+  AdminWatchListOut,
   BulkUserCreateItem,
   BulkUserCreateResultItem,
+  FeedbackCategory,
+  FeedbackOut,
   FreeRamOut,
   GpuAdminOut,
   GpuOut,
+  NotificationOut,
   OccupancyChartData,
   RankedUsageOut,
   RegulationOut,
@@ -15,7 +20,6 @@ import type {
   ServerOverviewOut,
   UserAdminOut,
   UserOut,
-  UserWithReservationsOut,
   WatchOut,
 } from './types'
 
@@ -32,11 +36,10 @@ export const scheduleApi = {
   overview: () => api.get<ServerOverviewOut[]>('/api/overview'),
   servers: () => api.get<ServerOut[]>('/api/servers'),
   gpus: (serverId: number) => api.get<GpuOut[]>(`/api/servers/${serverId}/gpus`),
-  availability: (gpuId: number, rangeStart: string, rangeEnd: string, bucketHours?: number) =>
+  availability: (gpuId: number, rangeStart: string, rangeEnd: string) =>
     api.get<OccupancyChartData>(`/api/gpus/${gpuId}/availability`, {
       range_start: rangeStart,
       range_end: rangeEnd,
-      bucket_hours: bucketHours,
     }),
   freeRam: (gpuId: number, start: string, end: string) =>
     api.get<FreeRamOut>(`/api/gpus/${gpuId}/free-ram`, { start, end }),
@@ -44,16 +47,33 @@ export const scheduleApi = {
 
 export const reservationsApi = {
   list: (upcomingOnly = true) => api.get<ReservationOut[]>('/api/reservations', { upcoming_only: upcomingOnly }),
-  create: (gpu_id: number, start_time: string, end_time: string, ram_mb: number) =>
-    api.post<ReservationOut>('/api/reservations', { gpu_id, start_time, end_time, ram_mb }),
+  create: (gpu_id: number, start_time: string, end_time: string, ram_mb: number, description: string) =>
+    api.post<ReservationOut>('/api/reservations', { gpu_id, start_time, end_time, ram_mb, description }),
   cancel: (id: number) => api.delete<void>(`/api/reservations/${id}`),
 }
 
 export const watchesApi = {
   list: () => api.get<WatchOut[]>('/api/watches'),
-  create: (gpu_id: number, range_start: string, range_end: string, min_ram_needed_mb: number) =>
-    api.post<WatchOut>('/api/watches', { gpu_id, range_start, range_end, min_ram_needed_mb }),
+  create: (gpu_id: number, range_start: string, range_end: string, min_ram_needed_mb: number, description: string) =>
+    api.post<WatchOut>('/api/watches', { gpu_id, range_start, range_end, min_ram_needed_mb, description }),
   cancel: (id: number) => api.delete<void>(`/api/watches/${id}`),
+}
+
+export const notificationsApi = {
+  list: () => api.get<NotificationOut[]>('/api/notifications'),
+  dismiss: (id: number) => api.post<void>(`/api/notifications/${id}/dismiss`),
+}
+
+export const feedbackApi = {
+  list: () => api.get<FeedbackOut[]>('/api/feedback'),
+  create: (category: FeedbackCategory, message: string) =>
+    api.post<FeedbackOut>('/api/feedback', { category, message }),
+}
+
+export const adminFeedbackApi = {
+  list: (userId?: number, category?: FeedbackCategory, page = 1, pageSize = 25) =>
+    api.get<AdminFeedbackListOut>('/api/admin/feedback', { user_id: userId, category, page, page_size: pageSize }),
+  delete: (id: number) => api.delete<void>(`/api/admin/feedback/${id}`),
 }
 
 export const adminUsersApi = {
@@ -95,13 +115,31 @@ export const adminRegulationApi = {
 }
 
 export const adminReservationsApi = {
-  list: (userId?: number) => api.get<AdminReservationOut[]>('/api/admin/reservations', { user_id: userId }),
-  usersWithReservations: () => api.get<UserWithReservationsOut[]>('/api/admin/reservations/users-with-reservations'),
+  list: (userId?: number, gpuId?: number, serverId?: number, page = 1, pageSize = 25) =>
+    api.get<AdminReservationListOut>('/api/admin/reservations', {
+      user_id: userId,
+      gpu_id: gpuId,
+      server_id: serverId,
+      page,
+      page_size: pageSize,
+    }),
   cancel: (id: number) => api.delete<void>(`/api/admin/reservations/${id}`),
   cancelForUser: (userId: number) =>
     api.post<{ cancelled: number }>(`/api/admin/reservations/cancel-for-user/${userId}`),
   cancelAll: (confirmPhrase: string) =>
     api.post<{ cancelled: number }>('/api/admin/reservations/cancel-all', { confirm_phrase: confirmPhrase }),
+}
+
+export const adminWatchesApi = {
+  list: (userId?: number, gpuId?: number, serverId?: number, page = 1, pageSize = 25) =>
+    api.get<AdminWatchListOut>('/api/admin/watches', {
+      user_id: userId,
+      gpu_id: gpuId,
+      server_id: serverId,
+      page,
+      page_size: pageSize,
+    }),
+  cancel: (id: number) => api.delete<void>(`/api/admin/watches/${id}`),
 }
 
 export const adminUsageApi = {

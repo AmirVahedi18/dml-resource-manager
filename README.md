@@ -37,7 +37,7 @@ enforced in `services/` (e.g. a new regulation field) takes effect everywhere fr
 ```
 main.py                  Entry point: loads .env + Hydra config, boots the web backend
 configs/                 Hydra configuration tree (web, database, logging, regulation,
-                           scheduler, schedule_chart, ...)
+                           scheduler, ...)
 src/dml_core/
   config/                Structured (dataclass) config schema, validated by Hydra at startup
   db/                    SQLAlchemy models + session management (SQLite)
@@ -113,7 +113,6 @@ afterward, grants nobody access by default; an admin must explicitly check it of
    - `configs/scheduler/default.yaml` — background job poll interval and stale watch-subscription
      retention window (reservations are never auto-deleted; see
      [Historical availability](#historical-availability-reservations-are-kept-forever))
-   - `configs/schedule_chart/default.yaml` — occupancy chart bucket width
 
 4. **Run it:**
 
@@ -259,9 +258,9 @@ rows — only long-since-consumed `WatchSubscription` rows are pruned after
 always look back via **Admin Panel → Usage Report → Historical Availability**, picking a GPU and
 an arbitrary date window.
 
-The chart's time-bucket width always matches the live schedule view's `schedule_chart.bucket_hours`
-(1h by default), regardless of how wide a window is requested, so the two charts read the same way
-for any range.
+The chart's time-bucket width always matches the regulation's `min_reservation_slot_minutes` (the
+same grid reservations must align to), regardless of how wide a window is requested, so the two
+charts read the same way for any range.
 
 Each bucket's stacked usage is the per-user breakdown at that bucket's single busiest instant
 (`dml_web/chart_data.py::_peak_usage_breakdown`), not a flat sum of every reservation touching the

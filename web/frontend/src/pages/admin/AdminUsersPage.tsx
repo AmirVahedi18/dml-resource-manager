@@ -5,10 +5,15 @@ import { useEffect, useState } from 'react'
 import { errorMessage } from '../../api/errorMessage'
 import { adminServersApi, adminUsersApi } from '../../api/endpoints'
 import type { ServerAdminOut, UserAdminOut } from '../../api/types'
+import { useAuth } from '../../auth/AuthContext'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { Pagination } from '../../components/Pagination'
 import { ServerAccessChips } from '../../components/ServerAccessChips'
 import { useToast } from '../../components/Toast'
+import { usePagedItems } from '../../hooks/usePagedItems'
 import { fadeSlideVariants } from '../../motion'
+
+const PAGE_SIZE = 20
 
 interface Draft {
   username: string
@@ -30,6 +35,7 @@ function sameServerIds(a: number[], b: number[]): boolean {
 
 export function AdminUsersPage() {
   const toast = useToast()
+  const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<UserAdminOut[] | null>(null)
   const [servers, setServers] = useState<ServerAdminOut[]>([])
 
@@ -44,6 +50,7 @@ export function AdminUsersPage() {
   const [detailsBusy, setDetailsBusy] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [pendingRevokeConfirm, setPendingRevokeConfirm] = useState(false)
 
   function reload() {
     adminUsersApi.list().then(setUsers).catch((e) => toast.error(errorMessage(e)))
@@ -53,6 +60,16 @@ export function AdminUsersPage() {
   useEffect(reload, [])
 
   const selected = users?.find((u) => u.id === selectedId) ?? null
+  const { page, setPage, totalPages, pageItems: pagedUsers } = usePagedItems(users ?? [], PAGE_SIZE)
+  const serverNameById = new Map(servers.map((s) => [s.id, s.name]))
+
+  const isBootstrapActor = currentUser?.is_bootstrap ?? false
+  // Only the bootstrap admin may grant admin rights, or revoke/deactivate/delete an admin
+  // account (their own or someone else's) -- the bootstrap account itself is untouchable by anyone.
+  const cannotChangeAdminFlag = !!selected && (selected.is_bootstrap || !isBootstrapActor)
+  const cannotDeactivate = !!selected && selected.is_admin && (selected.is_bootstrap || !isBootstrapActor)
+  const cannotDelete = !!selected && selected.is_admin && (selected.is_bootstrap || !isBootstrapActor)
+  const revokedServerIds = selected ? selected.server_ids.filter((id) => !accessSelection.includes(id)) : []
 
   function selectUser(u: UserAdminOut) {
     setSelectedId(u.id)
@@ -137,6 +154,19 @@ export function AdminUsersPage() {
     } finally {
       setDetailsBusy(false)
     }
+  }
+
+  function handleSaveClick() {
+    if (revokedServerIds.length > 0) {
+      setPendingRevokeConfirm(true)
+      return
+    }
+    handleSaveDetails()
+  }
+
+  function confirmRevokeAndSave() {
+    setPendingRevokeConfirm(false)
+    handleSaveDetails()
   }
 
   async function handleToggleActive() {
@@ -232,26 +262,40 @@ export function AdminUsersPage() {
                     <th>Name</th>
                     <th>Username</th>
                     <th>Status</th>
-                    <th>Admin</th>
                     <th style={{ textAlign: 'center' }}>Max GPUs</th>
-                    <th style={{ textAlign: 'center' }}>Servers</th>
+                    <th>Servers</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   <AnimatePresence>
-                    {users.map((u) => (
+                    {pagedUsers.map((u) => (
                       <motion.tr key={u.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
-                        <td>{u.full_name}</td>
+                        <td>
+                          {u.full_name}
+                          {u.is_admin && (
+                            <span className="badge badge-warn" style={{ marginLeft: 6 }}>
+                              admin
+                            </span>
+                          )}
+                        </td>
                         <td>{u.username ?? <span className="muted">deleted</span>}</td>
                         <td>
                           <span className={`badge ${u.is_active ? 'badge-success' : 'badge-neutral'}`}>
                             {u.is_active ? 'active' : 'inactive'}
                           </span>
                         </td>
-                        <td>{u.is_admin && <span className="badge badge-warn">admin</span>}</td>
                         <td style={{ textAlign: 'center' }}>{u.max_concurrent_gpus}</td>
-                        <td style={{ textAlign: 'center' }}>{u.server_ids.length}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {u.server_ids.length === 0 && <span className="muted">—</span>}
+                            {u.server_ids.map((id) => (
+                              <span key={id} className="badge badge-neutral">
+                                {serverNameById.get(id) ?? `#${id}`}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
                         <td style={{ textAlign: 'right' }}>
                           <button className="btn btn-sm" onClick={() => selectUser(u)}>
                             Manage
@@ -266,9 +310,16 @@ export function AdminUsersPage() {
 
             <div className="card-list">
               <AnimatePresence>
-                {users.map((u) => (
+                {pagedUsers.map((u) => (
                   <motion.div className="card-item" key={u.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
-                    <div className="card-item-title">{u.full_name}</div>
+                    <div className="card-item-title">
+                      {u.full_name}
+                      {u.is_admin && (
+                        <span className="badge badge-warn" style={{ marginLeft: 6 }}>
+                          admin
+                        </span>
+                      )}
+                    </div>
                     <div className="card-item-row">
                       <span className="muted">Username</span>
                       <span>{u.username ?? <span className="muted">deleted</span>}</span>
@@ -280,16 +331,19 @@ export function AdminUsersPage() {
                       </span>
                     </div>
                     <div className="card-item-row">
-                      <span className="muted">Admin</span>
-                      <span>{u.is_admin ? <span className="badge badge-warn">admin</span> : '—'}</span>
-                    </div>
-                    <div className="card-item-row">
                       <span className="muted">Max GPUs</span>
                       <span>{u.max_concurrent_gpus}</span>
                     </div>
                     <div className="card-item-row">
                       <span className="muted">Servers</span>
-                      <span>{u.server_ids.length}</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                        {u.server_ids.length === 0 && <span className="muted">—</span>}
+                        {u.server_ids.map((id) => (
+                          <span key={id} className="badge badge-neutral">
+                            {serverNameById.get(id) ?? `#${id}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="card-item-actions">
                       <button className="btn btn-sm" onClick={() => selectUser(u)}>
@@ -300,6 +354,8 @@ export function AdminUsersPage() {
                 ))}
               </AnimatePresence>
             </div>
+
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           </>
         )}
       </div>
@@ -334,17 +390,40 @@ export function AdminUsersPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto', justifyContent: 'flex-end' }}>
-              <button className="btn btn-primary" onClick={handleSaveDetails} disabled={detailsBusy}>
+              <button className="btn btn-primary" onClick={handleSaveClick} disabled={detailsBusy}>
                 {detailsBusy ? 'Saving…' : 'Save changes'}
               </button>
-              <button className="btn" onClick={handleToggleActive}>
+              <button
+                className="btn"
+                onClick={handleToggleActive}
+                disabled={selected.is_active && cannotDeactivate}
+                title={selected.is_active && cannotDeactivate ? 'Only the bootstrap admin can deactivate an admin account' : undefined}
+              >
                 <FontAwesomeIcon icon={selected.is_active ? faBan : faCheck} />{' '}
                 {selected.is_active ? 'Deactivate' : 'Activate'}
               </button>
-              <button className="btn" onClick={handleToggleAdmin}>
+              <button
+                className="btn"
+                onClick={handleToggleAdmin}
+                disabled={cannotChangeAdminFlag}
+                title={
+                  cannotChangeAdminFlag
+                    ? selected.is_bootstrap
+                      ? "The bootstrap admin's role can't be changed"
+                      : selected.is_admin
+                        ? 'Only the bootstrap admin can revoke admin rights'
+                        : 'Only the bootstrap admin can grant admin rights'
+                    : undefined
+                }
+              >
                 <FontAwesomeIcon icon={faShieldHalved} /> {selected.is_admin ? 'Revoke admin' : 'Grant admin'}
               </button>
-              <button className="btn btn-danger" onClick={() => setPendingDelete(true)}>
+              <button
+                className="btn btn-danger"
+                onClick={() => setPendingDelete(true)}
+                disabled={cannotDelete}
+                title={cannotDelete ? 'Only the bootstrap admin can delete an admin account' : undefined}
+              >
                 <FontAwesomeIcon icon={faTrash} /> Delete
               </button>
             </div>
@@ -359,8 +438,8 @@ export function AdminUsersPage() {
         message={
           selected && (
             <>
-              Delete <strong>{selected.full_name}</strong>'s account? This revokes their login, admin role, watches,
-              and server access. Their reservation history is kept for reporting. This cannot be undone.
+              Permanently delete <strong>{selected.full_name}</strong>'s account, including every reservation and
+              watch they ever made? This cannot be undone.
             </>
           )
         }
@@ -368,6 +447,24 @@ export function AdminUsersPage() {
         busy={deleteBusy}
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(false)}
+      />
+
+      <ConfirmDialog
+        open={pendingRevokeConfirm}
+        title="Revoke server access?"
+        message={
+          selected && (
+            <>
+              Removing <strong>{selected.full_name}</strong>'s access to{' '}
+              {revokedServerIds.map((id) => serverNameById.get(id) ?? `#${id}`).join(', ')} will also cancel any
+              active reservations they have on {revokedServerIds.length === 1 ? 'that server' : 'those servers'}.
+              Continue?
+            </>
+          )
+        }
+        confirmLabel="Revoke & save"
+        onConfirm={confirmRevokeAndSave}
+        onCancel={() => setPendingRevokeConfirm(false)}
       />
     </div>
   )

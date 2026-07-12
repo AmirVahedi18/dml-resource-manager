@@ -31,7 +31,8 @@ interface PreviewWindow {
 }
 
 export function OccupancyChart({ data, preview = null }: { data: OccupancyChartData; preview?: PreviewWindow | null }) {
-  const [view, setView] = useState<'bars' | 'timeline'>(() => (preview ? 'timeline' : 'bars'))
+  // Always open on Bars, even when a booking preview is present -- users can switch to Timeline.
+  const [view, setView] = useState<'bars' | 'timeline'>('bars')
   const { label: unitLabel, divisor } = displayUnit(data.capacity_mb)
 
   const totals = useMemo(() => {

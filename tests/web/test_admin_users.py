@@ -56,15 +56,76 @@ def test_rename_activate_and_max_gpus(client, admin_headers, student_user):
     assert r.status_code == 200 and r.json()["max_concurrent_gpus"] == 3
 
 
-def test_cannot_revoke_last_remaining_admin(client, admin_headers, admin_user):
-    r = client.patch(f"/api/admin/users/{admin_user.id}/admin", headers=admin_headers, json={"is_admin": False})
-    assert r.status_code == 422
+def test_non_bootstrap_admin_cannot_grant_admin(client, admin_headers, student_user):
+    r = client.patch(f"/api/admin/users/{student_user.id}/admin", headers=admin_headers, json={"is_admin": True})
+    assert r.status_code == 403
 
 
-def test_can_revoke_admin_when_another_admin_exists(client, admin_headers, admin_user, student_user):
-    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=admin_headers, json={"is_admin": True})
+def test_bootstrap_admin_can_grant_admin(client, bootstrap_admin_headers, student_user):
+    r = client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    assert r.status_code == 200 and r.json()["is_admin"] is True
+
+
+def test_non_bootstrap_admin_cannot_revoke_own_admin_rights(client, admin_headers, admin_user):
     r = client.patch(f"/api/admin/users/{admin_user.id}/admin", headers=admin_headers, json={"is_admin": False})
-    assert r.status_code == 200
+    assert r.status_code == 403
+
+
+def test_non_bootstrap_admin_cannot_revoke_other_admins_rights(client, admin_headers, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.patch(f"/api/admin/users/{student_user.id}/admin", headers=admin_headers, json={"is_admin": False})
+    assert r.status_code == 403
+
+
+def test_bootstrap_admin_can_revoke_other_admins_rights(client, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": False})
+    assert r.status_code == 200 and r.json()["is_admin"] is False
+
+
+def test_bootstrap_admin_can_revoke_deactivated_admins_rights_when_not_last_admin(
+    client, bootstrap_admin_headers, student_user
+):
+    # student_user becomes a second (non-bootstrap) admin, then gets deactivated -- revoking their
+    # admin role should still succeed since the bootstrap admin is still an active admin.
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    client.patch(f"/api/admin/users/{student_user.id}/active", headers=bootstrap_admin_headers, json={"is_active": False})
+    r = client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": False})
+    assert r.status_code == 200 and r.json()["is_admin"] is False
+
+
+def test_non_bootstrap_admin_cannot_deactivate_own_account(client, admin_headers, admin_user):
+    r = client.patch(f"/api/admin/users/{admin_user.id}/active", headers=admin_headers, json={"is_active": False})
+    assert r.status_code == 403
+
+
+def test_non_bootstrap_admin_cannot_deactivate_other_admin(client, admin_headers, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.patch(f"/api/admin/users/{student_user.id}/active", headers=admin_headers, json={"is_active": False})
+    assert r.status_code == 403
+
+
+def test_bootstrap_admin_can_deactivate_other_admin(client, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.patch(f"/api/admin/users/{student_user.id}/active", headers=bootstrap_admin_headers, json={"is_active": False})
+    assert r.status_code == 200 and r.json()["is_active"] is False
+
+
+def test_non_bootstrap_admin_cannot_delete_own_account(client, admin_headers, admin_user):
+    r = client.delete(f"/api/admin/users/{admin_user.id}", headers=admin_headers)
+    assert r.status_code == 403
+
+
+def test_non_bootstrap_admin_cannot_delete_other_admin(client, admin_headers, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.delete(f"/api/admin/users/{student_user.id}", headers=admin_headers)
+    assert r.status_code == 403
+
+
+def test_bootstrap_admin_can_delete_other_admin(client, bootstrap_admin_headers, student_user):
+    client.patch(f"/api/admin/users/{student_user.id}/admin", headers=bootstrap_admin_headers, json={"is_admin": True})
+    r = client.delete(f"/api/admin/users/{student_user.id}", headers=bootstrap_admin_headers)
+    assert r.status_code == 204
 
 
 def test_reset_password(client, admin_headers, student_user):
@@ -76,21 +137,18 @@ def test_reset_password(client, admin_headers, student_user):
 def test_delete_user(client, admin_headers, student_user):
     r = client.delete(f"/api/admin/users/{student_user.id}", headers=admin_headers)
     assert r.status_code == 204
-    usernames = [u["username"] for u in client.get("/api/admin/users", headers=admin_headers).json()]
-    assert "stud1" not in usernames
 
     # Login is revoked...
     assert client.post("/api/auth/login", json={"username": "stud1", "password": "studpass123"}).status_code == 401
 
-    # ...but the account row (and its full name) survives, so reports referencing it still work.
+    # ...and the account no longer appears at all.
     users = client.get("/api/admin/users", headers=admin_headers).json()
-    deleted = next(u for u in users if u["id"] == student_user.id)
-    assert deleted["username"] is None
-    assert deleted["full_name"] == "Student One"
-    assert deleted["is_active"] is False
+    assert all(u["id"] != student_user.id for u in users)
 
 
-def test_delete_user_preserves_reservation_history(client, admin_headers, db_session, student_with_access, server_and_gpu):
+def test_delete_user_hard_deletes_their_reservations(
+    client, admin_headers, db_session, student_with_access, server_and_gpu
+):
     from datetime import datetime, timedelta, timezone
 
     from dml_core.services import reservation_service, regulation_service
@@ -102,24 +160,19 @@ def test_delete_user_preserves_reservation_history(client, admin_headers, db_ses
     reservation = reservation_service.create_reservation(
         db_session, student_with_access, gpu, start, end, 4096, regulation
     )
-    reservation_service.cancel_reservation(db_session, reservation)
     db_session.commit()
     reservation_id = reservation.id
+    user_id = student_with_access.id
 
-    r = client.delete(f"/api/admin/users/{student_with_access.id}", headers=admin_headers)
+    r = client.delete(f"/api/admin/users/{user_id}", headers=admin_headers)
     assert r.status_code == 204
 
     from dml_core.db.models.reservation import Reservation
+    from dml_core.db.models.user import User
 
-    survived = db_session.get(Reservation, reservation_id)
-    assert survived is not None
-    assert survived.user_id == student_with_access.id
-
-    r = client.get("/api/admin/usage/historical-availability", headers=admin_headers, params={
-        "gpu_id": gpu.id, "start_date": start.date().isoformat(), "days": 2,
-    })
-    assert r.status_code == 200
-    assert len(r.json()["segments"]) == 1
+    db_session.expire_all()
+    assert db_session.get(Reservation, reservation_id) is None
+    assert db_session.get(User, user_id) is None
 
 
 def test_bootstrap_admin_cannot_be_deactivated(client, admin_headers, admin_user, monkeypatch):
@@ -149,3 +202,30 @@ def test_set_server_access(client, admin_headers, student_user, server_and_gpu):
     )
     assert r.status_code == 200
     assert r.json()["server_ids"] == [server.id]
+
+
+def test_revoking_server_access_cancels_users_reservations_there(
+    client, admin_headers, db_session, student_with_access, server_and_gpu
+):
+    from datetime import datetime, timedelta, timezone
+
+    from dml_core.db.models.reservation import Reservation, ReservationStatus
+    from dml_core.services import regulation_service, reservation_service
+
+    _, gpu = server_and_gpu
+    regulation = regulation_service.get_regulation(db_session)
+    start = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    end = start + timedelta(hours=2)
+    reservation = reservation_service.create_reservation(
+        db_session, student_with_access, gpu, start, end, 4096, regulation
+    )
+    db_session.commit()
+    reservation_id = reservation.id
+    user_id = student_with_access.id
+
+    r = client.patch(f"/api/admin/users/{user_id}/server-access", headers=admin_headers, json={"server_ids": []})
+    assert r.status_code == 200
+    assert r.json()["server_ids"] == []
+
+    db_session.expire_all()
+    assert db_session.get(Reservation, reservation_id).status == ReservationStatus.CANCELLED

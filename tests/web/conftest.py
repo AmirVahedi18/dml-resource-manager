@@ -52,6 +52,22 @@ def admin_headers(client, admin_user):
 
 
 @pytest.fixture()
+def bootstrap_admin_user(db_session, monkeypatch):
+    user = auth_service.create_user_with_credentials(db_session, "bootadmin", "bootpass123", "Bootstrap Admin")
+    from dml_core.services import user_service
+
+    user_service.set_admin(db_session, user, True)
+    db_session.commit()
+    monkeypatch.setenv("WEB_ADMIN_USERNAME", "bootadmin")
+    return user
+
+
+@pytest.fixture()
+def bootstrap_admin_headers(client, bootstrap_admin_user):
+    return login(client, "bootadmin", "bootpass123")
+
+
+@pytest.fixture()
 def student_user(db_session):
     user = auth_service.create_user_with_credentials(db_session, "stud1", "studpass123", "Student One")
     db_session.commit()

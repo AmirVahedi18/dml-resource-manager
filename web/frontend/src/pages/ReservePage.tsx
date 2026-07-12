@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
 import { reservationsApi, scheduleApi, watchesApi } from '../api/endpoints'
-import type { GpuOut, OccupancyChartData, RegulationOut } from '../api/types'
+import type { GpuOut, OccupancyChartData, RegulationOut, ServerOverviewOut } from '../api/types'
 import { AvailabilityGlance } from '../components/AvailabilityGlance'
 import { DatePicker } from '../components/DatePicker'
 import { InfoTooltip } from '../components/InfoTooltip'
@@ -109,6 +109,7 @@ export function ReservePage() {
   const [startValue, setStartValue] = useState(() => new Date(Date.now() + 60 * 60 * 1000).toISOString())
   const [durationHours, setDurationHours] = useState(1)
   const [ramGb, setRamGb] = useState(4)
+  const [description, setDescription] = useState('')
   const [freeRamMb, setFreeRamMb] = useState<number | null>(null)
 
   const [busy, setBusy] = useState(false)
@@ -172,6 +173,26 @@ export function ReservePage() {
     setGpu(pickedGpu)
   }
 
+  // Re-checked on every overview refresh (see AvailabilityGlance's background poll) so a GPU or
+  // its server being deactivated mid-booking is caught here -- at the GPU-selection/form stage --
+  // rather than only surfacing as a rejected submit at the very end.
+  function handleServersUpdate(servers: ServerOverviewOut[]) {
+    if (!gpuId) return
+    for (const server of servers) {
+      const found = server.gpus.find((g) => g.id === gpuId)
+      if (!found) continue
+      const active = server.is_active && found.is_active
+      if (!active) {
+        toast.error('This GPU just became unavailable (it was deactivated). Please pick another one.')
+        setGpuId(null)
+        setGpu(null)
+      } else if (!gpu?.is_active) {
+        setGpu((prev) => (prev ? { ...prev, is_active: true } : prev))
+      }
+      return
+    }
+  }
+
   const startUtc = useMemo(() => new Date(startValue), [startValue])
   const endUtc = useMemo(() => new Date(startUtc.getTime() + durationHours * 3600_000), [startUtc, durationHours])
 
@@ -206,13 +227,20 @@ export function ReservePage() {
     setStartValue(new Date(Date.now() + 60 * 60 * 1000).toISOString())
     setDurationHours(1)
     setRamGb(4)
+    setDescription('')
   }
 
   async function handleSubmit() {
-    if (!gpuId) return
+    if (!gpuId || !description.trim()) return
+    if (!gpu?.is_active) {
+      toast.error('This GPU is no longer available (it was deactivated). Please pick another one.')
+      return
+    }
     setBusy(true)
     try {
-      await reservationsApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
+      await reservationsApi.create(
+        gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024), description.trim()
+      )
       toast.success('Reservation created.')
       resetForm()
       setReloadSignal((n) => n + 1) // refresh glance + My Reservations
@@ -227,10 +255,16 @@ export function ReservePage() {
   }
 
   async function handleCreateWatch() {
-    if (!gpuId) return
+    if (!gpuId || !description.trim()) return
+    if (!gpu?.is_active) {
+      toast.error('This GPU is no longer available (it was deactivated). Please pick another one.')
+      return
+    }
     setWatchBusy(true)
     try {
-      await watchesApi.create(gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024))
+      await watchesApi.create(
+        gpuId, startUtc.toISOString(), endUtc.toISOString(), Math.round(ramGb * 1024), description.trim()
+      )
       toast.success('Watch created — the system will auto-book the moment this window has enough free RAM.')
       setReloadSignal((n) => n + 1) // refresh My Reservations' watches list
     } catch (err) {
@@ -259,6 +293,7 @@ export function ReservePage() {
         chart={chart}
         tz={tz}
         preview={preview}
+        onServersUpdate={handleServersUpdate}
       />
 
       <div className="card card-feature">
@@ -308,6 +343,19 @@ export function ReservePage() {
                 <input type="number" min={0.5} step={0.5} value={ramGb} onChange={(e) => setRamGb(Number(e.target.value))} />
               </div>
             </div>
+            <div className="row">
+              <div className="field">
+                <label>Description (required — what is this GPU time for?)</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={300}
+                  placeholder="e.g. Project name, paper, experiment…"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="reserve-window-info">
               <p className="muted">
                 {freeRamMb == null ? (
@@ -324,10 +372,18 @@ export function ReservePage() {
               </p>
             </div>
             <div className="reserve-actions">
-              <button className="btn btn-primary btn-lg" onClick={handleSubmit} disabled={busy}>
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={handleSubmit}
+                disabled={busy || !description.trim() || !gpu.is_active}
+              >
                 {busy ? 'Reserving…' : 'Reserve this GPU'}
               </button>
-              <button className="btn btn-secondary btn-lg" onClick={handleCreateWatch} disabled={watchBusy}>
+              <button
+                className="btn btn-secondary btn-lg"
+                onClick={handleCreateWatch}
+                disabled={watchBusy || !description.trim() || !gpu.is_active}
+              >
                 {watchBusy ? 'Creating watch…' : 'Watch this instead'}
               </button>
               <InfoTooltip text="Not enough free RAM right now for this window? Watch it instead — you'll be auto-booked the moment it frees up." />

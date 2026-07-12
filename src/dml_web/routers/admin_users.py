@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from dml_core.db.models.user import User
-from dml_core.services import auth_service, server_access_service, user_service
+from dml_core.services import auth_service, reservation_service, server_access_service, user_service
 from dml_web.deps import get_session, require_admin
 from dml_web.schemas.admin_users import (
     BulkUserCreateRequest,
@@ -28,6 +28,7 @@ def _to_admin_out(session: Session, user: User) -> UserAdminOut:
         full_name=user.full_name,
         is_active=user.is_active,
         is_admin=user.is_admin,
+        is_bootstrap=auth_service.is_bootstrap_admin(user.username),
         max_concurrent_gpus=user.max_concurrent_gpus,
         server_ids=server_ids,
     )
@@ -93,11 +94,16 @@ def set_active(
     user_id: int,
     payload: SetActiveRequest,
     session: Session = Depends(get_session),
-    _: User = Depends(require_admin),
+    actor: User = Depends(require_admin),
 ) -> UserAdminOut:
     user = _get_user_or_404(session, user_id)
-    if not payload.is_active and auth_service.is_bootstrap_admin(user.username):
-        raise HTTPException(422, "Cannot deactivate the bootstrap admin account")
+    if not payload.is_active and user.is_admin:
+        if auth_service.is_bootstrap_admin(user.username):
+            raise HTTPException(422, "Cannot deactivate the bootstrap admin account")
+        if not auth_service.is_bootstrap_admin(actor.username):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only the bootstrap admin can deactivate an admin account"
+            )
     user_service.set_active(session, user, payload.is_active)
     return _to_admin_out(session, user)
 
@@ -107,15 +113,27 @@ def set_admin(
     user_id: int,
     payload: SetAdminRequest,
     session: Session = Depends(get_session),
-    _: User = Depends(require_admin),
+    actor: User = Depends(require_admin),
 ) -> UserAdminOut:
     user = _get_user_or_404(session, user_id)
+    if payload.is_admin and not user.is_admin:
+        if not auth_service.is_bootstrap_admin(actor.username):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only the bootstrap admin can grant admin rights"
+            )
     if user.is_admin and not payload.is_admin:
         if auth_service.is_bootstrap_admin(user.username):
             raise HTTPException(422, "Cannot revoke the bootstrap admin account's admin role")
-        remaining_admins = [u for u in user_service.list_users(session, active_only=True) if u.is_admin]
-        if len(remaining_admins) <= 1:
-            raise HTTPException(422, "Cannot revoke the last remaining admin")
+        if not auth_service.is_bootstrap_admin(actor.username):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only the bootstrap admin can revoke another admin's rights"
+            )
+        # A deactivated admin can't log in anyway, so it isn't part of the active-admin headcount
+        # this guard protects -- only check when revoking from a currently-active admin.
+        if user.is_active:
+            remaining_admins = [u for u in user_service.list_users(session, active_only=True) if u.is_admin]
+            if len(remaining_admins) <= 1:
+                raise HTTPException(422, "Cannot revoke the last remaining admin")
     user_service.set_admin(session, user, payload.is_admin)
     return _to_admin_out(session, user)
 
@@ -140,7 +158,11 @@ def set_server_access(
     _: User = Depends(require_admin),
 ) -> UserAdminOut:
     user = _get_user_or_404(session, user_id)
-    server_access_service.set_access(session, user.id, set(payload.server_ids))
+    previous_server_ids = server_access_service.list_accessible_server_ids(session, user.id)
+    new_server_ids = set(payload.server_ids)
+    server_access_service.set_access(session, user.id, new_server_ids)
+    for revoked_server_id in previous_server_ids - new_server_ids:
+        reservation_service.cancel_all_for_user_on_server(session, user.id, revoked_server_id)
     return _to_admin_out(session, user)
 
 
@@ -157,9 +179,11 @@ def reset_password(
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    user_id: int, session: Session = Depends(get_session), _: User = Depends(require_admin)
+    user_id: int, session: Session = Depends(get_session), actor: User = Depends(require_admin)
 ) -> None:
     user = _get_user_or_404(session, user_id)
     if auth_service.is_bootstrap_admin(user.username):
         raise HTTPException(422, "Cannot delete the bootstrap admin account")
+    if user.is_admin and not auth_service.is_bootstrap_admin(actor.username):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the bootstrap admin can delete an admin account")
     user_service.delete_user(session, user)

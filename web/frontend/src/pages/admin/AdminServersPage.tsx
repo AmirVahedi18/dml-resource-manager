@@ -6,9 +6,13 @@ import { errorMessage } from '../../api/errorMessage'
 import { adminServersApi } from '../../api/endpoints'
 import type { GpuAdminOut, ServerAdminOut } from '../../api/types'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { Pagination } from '../../components/Pagination'
 import { PromptDialog } from '../../components/PromptDialog'
 import { useToast } from '../../components/Toast'
+import { usePagedItems } from '../../hooks/usePagedItems'
 import { fadeSlideVariants } from '../../motion'
+
+const PAGE_SIZE = 20
 
 export function AdminServersPage() {
   const toast = useToast()
@@ -36,10 +40,21 @@ export function AdminServersPage() {
   useEffect(reloadServers, [])
 
   const selected = servers?.find((s) => s.id === selectedId) ?? null
+  const {
+    page: serversPage,
+    setPage: setServersPage,
+    totalPages: serversTotalPages,
+    pageItems: pagedServers,
+  } = usePagedItems(servers ?? [], PAGE_SIZE)
+  const { page: gpusPage, setPage: setGpusPage, totalPages: gpusTotalPages, pageItems: pagedGpus } = usePagedItems(
+    gpus,
+    PAGE_SIZE,
+  )
 
   function selectServer(s: ServerAdminOut) {
     setSelectedId(s.id)
     setRenameValue(s.name)
+    setGpusPage(1)
     adminServersApi.gpus(s.id).then(setGpus).catch((e) => toast.error(errorMessage(e)))
   }
 
@@ -171,7 +186,7 @@ export function AdminServersPage() {
                 </thead>
                 <tbody>
                   <AnimatePresence>
-                    {servers.map((s) => (
+                    {pagedServers.map((s) => (
                       <motion.tr key={s.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
                         <td>{s.name}</td>
                         <td>
@@ -193,7 +208,7 @@ export function AdminServersPage() {
 
             <div className="card-list">
               <AnimatePresence>
-                {servers.map((s) => (
+                {pagedServers.map((s) => (
                   <motion.div className="card-item" key={s.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
                     <div className="card-item-title">{s.name}</div>
                     <div className="card-item-row">
@@ -211,6 +226,8 @@ export function AdminServersPage() {
                 ))}
               </AnimatePresence>
             </div>
+
+            <Pagination page={serversPage} totalPages={serversTotalPages} onChange={setServersPage} />
           </>
         )}
       </div>
@@ -254,7 +271,7 @@ export function AdminServersPage() {
               </thead>
               <tbody>
                 <AnimatePresence>
-                  {gpus.map((g) => (
+                  {pagedGpus.map((g) => (
                     <motion.tr key={g.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
                       <td>GPU{g.index_on_server}</td>
                       <td>{g.model_name}</td>
@@ -284,7 +301,7 @@ export function AdminServersPage() {
 
           <div className="card-list">
             <AnimatePresence>
-              {gpus.map((g) => (
+              {pagedGpus.map((g) => (
                 <motion.div className="card-item" key={g.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
                   <div className="card-item-title">
                     GPU{g.index_on_server} — {g.model_name}
@@ -314,6 +331,8 @@ export function AdminServersPage() {
               ))}
             </AnimatePresence>
           </div>
+
+          <Pagination page={gpusPage} totalPages={gpusTotalPages} onChange={setGpusPage} />
 
           <h3 style={{ marginTop: 16 }}>Add GPU</h3>
           <div className="row" style={{ alignItems: 'flex-end' }}>

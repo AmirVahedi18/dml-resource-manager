@@ -463,6 +463,20 @@ textarea {
   margin-bottom: 18px;
 }
 
+.feedback-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.feedback-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 /* A "feature" card carries more visual weight than the reference cards around it —
    used for the primary action (booking form) and the live-availability glance. The accent
    top border + soft ring reads as "primary" and is independent of the card's padding
@@ -644,6 +658,16 @@ textarea {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+.glance-gpu-inactive,
+.glance-gpu:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.glance-gpu-inactive:hover {
+  border-color: var(--border);
+}
+
 .glance-gpu-head {
   display: flex;
   align-items: center;
@@ -685,6 +709,9 @@ textarea {
 }
 .glance-meter-full {
   background: var(--danger);
+}
+.glance-meter-inactive {
+  background: var(--ink-muted);
 }
 
 .glance-gpu-foot {
@@ -798,6 +825,14 @@ textarea {
 .btn-sm {
   padding: 4px 9px;
   font-size: 0.8rem;
+}
+
+/* Center the theme-toggle's (animated) icon within the button -- an inline wrapper's line-box
+   leading otherwise pushes it off vertical center, most visible on mobile where the label hides. */
+.theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Prominent primary action (the Reserve button). */
@@ -1117,6 +1152,53 @@ tr:last-child td {
 }
 .toast-info .toast-icon {
   color: var(--accent);
+}
+
+.notification-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.notification-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px 11px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.notification-banner-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+  color: var(--warn);
+}
+
+.notification-banner-msg {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.notification-banner-close {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 0.9rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.notification-banner-close:hover {
+  color: var(--ink);
 }
 
 .login-shell {
@@ -1543,6 +1625,7 @@ tr:last-child td {
 }
 
 .segmented-option {
+  position: relative;
   appearance: none;
   -webkit-appearance: none;
   border: none;
@@ -1555,15 +1638,28 @@ tr:last-child td {
   font-weight: 500;
   font-family: inherit;
   white-space: nowrap;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: color 0.12s ease;
 }
 
 .segmented-option:hover {
   color: var(--ink);
 }
 
-.segmented-option-active {
+/* Sliding shared-layout pill (framer-motion) — sits behind the label of the active option. */
+.segmented-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
   background: var(--accent);
+  z-index: 0;
+}
+
+.segmented-option-label {
+  position: relative;
+  z-index: 1;
+}
+
+.segmented-option-active {
   color: var(--accent-ink);
   font-weight: 600;
 }
@@ -1586,6 +1682,33 @@ tr:last-child td {
 .reservation-cards,
 .card-list {
   display: none;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pagination-page {
+  white-space: nowrap;
+}
+
+/* Reserves width for the animated page number so the surrounding text doesn't shift as it ticks. */
+.pagination-page-number {
+  display: inline-block;
+  min-width: 1ch;
+  text-align: center;
 }
 
 .topbar-brand {

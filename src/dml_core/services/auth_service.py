@@ -42,7 +42,7 @@ def create_user_with_credentials(
 ) -> User:
     username = username.strip()
     if user_service.get_user_by_username(session, username) is not None:
-        raise UsernameAlreadyExistsError(f"username {username!r} is already registered")
+        raise UsernameAlreadyExistsError(f"The username '{username}' is already taken.")
     user = User(
         username=username,
         password_hash=hash_password(password),

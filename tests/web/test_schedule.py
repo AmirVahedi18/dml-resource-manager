@@ -7,6 +7,7 @@ def test_regulation_includes_app_timezone(client, admin_headers):
     r = client.get("/api/regulation", headers=admin_headers)
     assert r.status_code == 200
     assert r.json()["timezone"] == "UTC"
+    assert r.json()["reactivation_delay_minutes"] == 60
 
 
 def test_servers_filtered_by_access_for_student(client, student_user, server_and_gpu):
@@ -26,6 +27,49 @@ def test_gpus_for_server_requires_access(client, student_user, server_and_gpu):
     assert client.get(f"/api/servers/{server.id}/gpus", headers=headers).status_code == 403
 
 
+def test_inactive_server_and_gpu_still_visible_to_student_with_access(
+    client, student_with_access, server_and_gpu
+):
+    from dml_core.services import server_service
+
+    server, gpu = server_and_gpu
+    headers = login(client, "stud1", "studpass123")
+
+    servers = client.get("/api/servers", headers=headers).json()
+    assert [s["is_active"] for s in servers if s["id"] == server.id] == [True]
+
+    gpus = client.get(f"/api/servers/{server.id}/gpus", headers=headers).json()
+    assert [g["is_active"] for g in gpus if g["id"] == gpu.id] == [True]
+
+    overview = client.get("/api/overview", headers=headers).json()
+    assert overview[0]["is_active"] is True
+    assert overview[0]["gpus"][0]["is_active"] is True
+
+
+def test_deactivated_server_and_gpu_still_visible_but_marked_inactive(
+    client, db_session, student_with_access, server_and_gpu
+):
+    from dml_core.services import server_service
+
+    server, gpu = server_and_gpu
+    server_service.set_gpu_active(db_session, gpu, False)
+    db_session.commit()
+    headers = login(client, "stud1", "studpass123")
+
+    gpus = client.get(f"/api/servers/{server.id}/gpus", headers=headers).json()
+    assert gpus == [{"id": gpu.id, "server_id": server.id, "index_on_server": 0, "model_name": "A100", "total_ram_mb": 40960, "is_active": False}]
+
+    overview = client.get("/api/overview", headers=headers).json()
+    assert overview[0]["gpus"][0]["is_active"] is False
+
+    server_service.set_server_active(db_session, server, False)
+    db_session.commit()
+    servers = client.get("/api/servers", headers=headers).json()
+    assert [s["is_active"] for s in servers if s["id"] == server.id] == [False]
+    overview = client.get("/api/overview", headers=headers).json()
+    assert overview[0]["is_active"] is False
+
+
 def test_availability_chart_shape(client, admin_headers, db_session, server_and_gpu):
     from dml_core.services import auth_service, reservation_service, regulation_service
 
@@ -43,11 +87,12 @@ def test_availability_chart_shape(client, admin_headers, db_session, server_and_
     r = client.get(
         f"/api/gpus/{gpu.id}/availability",
         headers=admin_headers,
-        params={"range_start": range_start.isoformat(), "range_end": range_end.isoformat(), "bucket_hours": 1},
+        params={"range_start": range_start.isoformat(), "range_end": range_end.isoformat()},
     )
     assert r.status_code == 200
     body = r.json()
     assert body["capacity_mb"] == gpu.total_ram_mb
+    assert body["bucket_minutes"] == regulation.min_reservation_slot_minutes
     assert len(body["segments"]) == 1
     assert body["segments"][0]["user"] == "Chart User"
     assert any(b["usage"] for b in body["buckets"])

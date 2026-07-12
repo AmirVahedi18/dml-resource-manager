@@ -21,6 +21,7 @@ class UserOut(BaseModel):
     username: str | None
     full_name: str
     is_admin: bool
+    is_bootstrap: bool
     max_concurrent_gpus: int
 
     model_config = {"from_attributes": True}

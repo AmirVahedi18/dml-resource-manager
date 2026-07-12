@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react'
 import { scheduleApi } from '../api/endpoints'
 import type { GpuOut, OccupancyChartData, ServerOverviewOut } from '../api/types'
 import { OccupancyChart } from './OccupancyChart'
+import { Segmented } from './Segmented'
 import { useToast } from './Toast'
-import { fadeSlideVariants, fadeVariants } from '../motion'
+import { fadeSlideVariants, fadeVariants, staggerContainer, staggerItem } from '../motion'
 import { formatDateTime } from '../utils/formatDate'
 
 /*
@@ -31,7 +32,15 @@ interface Props {
   tz: string
   /** Hypothetical booking currently being configured in the form below, if any. */
   preview?: { start: string; end: string; ramMb: number } | null
+  /** Fires every time fresh overview data arrives, so the form below can notice if the GPU it
+   * currently has selected was deactivated by an admin while the student was filling in the form. */
+  onServersUpdate?: (servers: ServerOverviewOut[]) => void
 }
+
+/** How often to silently re-poll the overview in the background, so a GPU/server that gets
+ * deactivated mid-booking is caught here (and by the reactive guard in ReservePage) well before
+ * the student would otherwise only find out from a rejected submit. */
+const POLL_INTERVAL_MS = 20_000
 
 function gb(mb: number): string {
   return (mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)
@@ -47,6 +56,7 @@ export function AvailabilityGlance({
   chart,
   tz,
   preview = null,
+  onServersUpdate,
 }: Props) {
   const toast = useToast()
   const [servers, setServers] = useState<ServerOverviewOut[] | null>(null)
@@ -68,6 +78,21 @@ export function AvailabilityGlance({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadSignal])
+
+  // Background refresh, independent of reloadSignal, so a GPU/server deactivated by an admin
+  // shows up here (and triggers the ReservePage guard) without the student needing to take an
+  // action first.
+  useEffect(() => {
+    const id = setInterval(() => {
+      scheduleApi.overview().then((data) => setServers(data)).catch(() => {})
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (servers) onServersUpdate?.(servers)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers])
 
   return (
     <div className="card card-feature">
@@ -110,37 +135,52 @@ export function AvailabilityGlance({
 
           {servers?.map((server) => (
             <div key={server.id} className="glance-server">
-              <div className="glance-server-name">{server.name}</div>
+              <div className="glance-server-name">
+                {server.name}
+                {!server.is_active && (
+                  <span className="badge badge-neutral" style={{ marginLeft: 6 }}>
+                    Inactive
+                  </span>
+                )}
+              </div>
               {server.gpus.length === 0 ? (
                 <p className="muted glance-empty">No GPUs on this server.</p>
               ) : (
-                <div className="glance-grid">
+                <motion.div className="glance-grid" variants={staggerContainer} initial="initial" animate="animate">
                   {server.gpus.map((g) => {
+                    const inactive = !server.is_active || !g.is_active
                     const usedPct = Math.min(100, Math.round((g.used_ram_mb / Math.max(g.total_ram_mb, 1)) * 100))
                     const isFull = g.free_ram_mb <= 0
                     const isFree = g.used_ram_mb <= 0
-                    const status = isFull ? 'full' : isFree ? 'free' : 'partial'
+                    const status = inactive ? 'inactive' : isFull ? 'full' : isFree ? 'free' : 'partial'
                     const selected = selectedGpuId === g.id
                     return (
-                      <button
+                      <motion.button
                         key={g.id}
                         type="button"
+                        variants={staggerItem}
                         className={`glance-gpu glance-gpu-${status}${selected ? ' glance-gpu-selected' : ''}`}
                         aria-pressed={selected}
-                        onClick={() =>
+                        disabled={inactive}
+                        title={inactive ? 'This GPU is currently inactive and cannot be booked.' : undefined}
+                        onClick={() => {
+                          if (inactive) return
                           onPick(server.id, {
                             id: g.id,
                             server_id: server.id,
                             index_on_server: g.index_on_server,
                             model_name: g.model_name,
                             total_ram_mb: g.total_ram_mb,
+                            is_active: g.is_active,
                           })
-                        }
+                        }}
                       >
                         <div className="glance-gpu-head">
                           <span className="glance-gpu-title">GPU{g.index_on_server}</span>
-                          <span className={`badge badge-${isFull ? 'danger' : isFree ? 'success' : 'warn'}`}>
-                            {isFull ? 'Full' : isFree ? 'Free' : `${gb(g.free_ram_mb)} GB free`}
+                          <span
+                            className={`badge badge-${inactive ? 'neutral' : isFull ? 'danger' : isFree ? 'success' : 'warn'}`}
+                          >
+                            {inactive ? 'Inactive' : isFull ? 'Full' : isFree ? 'Free' : `${gb(g.free_ram_mb)} GB free`}
                           </span>
                         </div>
                         <div className="glance-gpu-model">{g.model_name}</div>
@@ -150,10 +190,10 @@ export function AvailabilityGlance({
                         <div className="glance-gpu-foot mono">
                           {gb(g.free_ram_mb)} / {gb(g.total_ram_mb)} GB free
                         </div>
-                      </button>
+                      </motion.button>
                     )
                   })}
-                </div>
+                </motion.div>
               )}
             </div>
           ))}
@@ -181,18 +221,12 @@ export function AvailabilityGlance({
                 <OccupancyChart key={selectedGpuId} data={chart} preview={preview} />
 
                 <div className="glance-range-picker">
-                  <div className="segmented">
-                    {availableRangeOptions.map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        className={`segmented-option${days === d ? ' segmented-option-active' : ''}`}
-                        onClick={() => onDaysChange(d)}
-                      >
-                        {d === 1 ? 'Today' : `${d}d`}
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    ariaLabel="Availability range"
+                    value={days}
+                    options={availableRangeOptions.map((d) => ({ value: d, label: d === 1 ? 'Today' : `${d}d` }))}
+                    onChange={onDaysChange}
+                  />
                 </div>
 
                 <AnimatePresence>

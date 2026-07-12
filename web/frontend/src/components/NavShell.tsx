@@ -4,6 +4,8 @@ import {
   faCalendarPlus,
   faChartLine,
   faClipboardList,
+  faComment,
+  faEye,
   faKey,
   faRightFromBracket,
   faScaleBalanced,
@@ -14,11 +16,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useOutlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { fadeSlideVariants } from '../motion'
+import { fadeSlideVariants, pageVariants } from '../motion'
 import { AppFooter } from './AppFooter'
 import { ConfirmDialog } from './ConfirmDialog'
+import { NotificationBanner } from './NotificationBanner'
 import { ThemeToggle } from './ThemeToggle'
 
 function Link({ to, icon, children }: { to: string; icon: IconDefinition; children: React.ReactNode }) {
@@ -36,7 +39,9 @@ const ADMIN_TABS = [
   { to: '/admin/servers', icon: faServer, label: 'Servers' },
   { to: '/admin/regulation', icon: faScaleBalanced, label: 'Rules' },
   { to: '/admin/reservations', icon: faClipboardList, label: 'Reservations' },
+  { to: '/admin/watches', icon: faEye, label: 'Watches' },
   { to: '/admin/usage', icon: faChartLine, label: 'Usage' },
+  { to: '/admin/feedback', icon: faComment, label: 'Feedback' },
 ]
 
 function BottomNavLink({ to, icon, label }: { to: string; icon: IconDefinition; label: string }) {
@@ -53,6 +58,10 @@ function BottomNavLink({ to, icon, label }: { to: string; icon: IconDefinition; 
 export function NavShell() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  // Capture the routed page as a concrete element (frozen), rather than <Outlet /> which reads
+  // the *live* router context. That lets AnimatePresence keep the OLD page mounted through its
+  // exit animation instead of instantly swapping in the new route's content mid-fade.
+  const outlet = useOutlet()
   const inAdminArea = location.pathname.startsWith('/admin')
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
 
@@ -65,6 +74,7 @@ export function NavShell() {
 
         <div className="sidebar-section-label">Student</div>
         <Link to="/" icon={faCalendarPlus}>Reserve GPU</Link>
+        <Link to="/feedback" icon={faComment}>Feedback</Link>
         <Link to="/change-password" icon={faKey}>Change Password</Link>
         <button type="button" className="sidebar-link sidebar-logout" onClick={() => setLogoutConfirmOpen(true)}>
           <FontAwesomeIcon icon={faRightFromBracket} fixedWidth className="sidebar-link-icon" /> Log out
@@ -84,7 +94,9 @@ export function NavShell() {
               <Link to="/admin/servers" icon={faServer}>Manage Servers</Link>
               <Link to="/admin/regulation" icon={faScaleBalanced}>Regulation</Link>
               <Link to="/admin/reservations" icon={faClipboardList}>All Reservations</Link>
+              <Link to="/admin/watches" icon={faEye}>All Watches</Link>
               <Link to="/admin/usage" icon={faChartLine}>Usage Report</Link>
+              <Link to="/admin/feedback" icon={faComment}>Feedback</Link>
             </motion.div>
           )}
         </AnimatePresence>
@@ -105,7 +117,21 @@ export function NavShell() {
           <ThemeToggle />
         </div>
         <div className="content">
-          <Outlet />
+          <NotificationBanner />
+          {/* Animate only the routed page, keyed by pathname. mode="wait" fully fades the old
+              page out before the new one appears; the banner and footer stay put. The key is
+              also passed to the inner element so the frozen `outlet` swaps in sync. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              {outlet}
+            </motion.div>
+          </AnimatePresence>
           <AppFooter />
         </div>
 
@@ -130,6 +156,7 @@ export function NavShell() {
             {STUDENT_TABS.map((t) => (
               <BottomNavLink key={t.to} to={t.to} icon={t.icon} label={t.label} />
             ))}
+            <BottomNavLink to="/feedback" icon={faComment} label="Feedback" />
             <BottomNavLink to="/change-password" icon={faKey} label="Password" />
             <AnimatePresence>
               {user?.is_admin && !inAdminArea && (

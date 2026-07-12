@@ -38,10 +38,7 @@ class RegulationConfig:
     booking_horizon_days: int = 90
     min_reservation_slot_minutes: int = 30
     max_active_reservations_per_user: int = 3
-    # Minimum notice (minutes) a student must give before a reservation's start to self-cancel it
-    # without penalty; 0 disables the cutoff (students may cancel anytime before start, as in v1).
-    # Admin-initiated cancellations (single/bulk/override) always bypass this cutoff.
-    min_cancellation_notice_minutes: int = 0
+    reactivation_delay_minutes: int = 60
 
 
 @dataclass
@@ -54,11 +51,6 @@ class SchedulerConfig:
 
 
 @dataclass
-class ScheduleChartConfig:
-    bucket_hours: float = 2.0
-
-
-@dataclass
 class AppConfig:
     # IANA timezone used to display times to users (e.g. Asia/Tehran, UTC). Overridable without
     # touching configs/ by setting TZ in .env -- see main.py.
@@ -68,7 +60,6 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     regulation: RegulationConfig = field(default_factory=RegulationConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    schedule_chart: ScheduleChartConfig = field(default_factory=ScheduleChartConfig)
 
 
 def register_configs() -> None:

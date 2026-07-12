@@ -6,10 +6,14 @@ import { errorMessage } from '../api/errorMessage'
 import { reservationsApi, watchesApi } from '../api/endpoints'
 import type { ReservationOut, WatchOut } from '../api/types'
 import { useGpuLookup } from '../api/useGpuLookup'
+import { usePagedItems } from '../hooks/usePagedItems'
 import { formatDateTime } from '../utils/formatDate'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Pagination } from './Pagination'
 import { fadeSlideVariants, fadeVariants } from '../motion'
 import { useToast } from './Toast'
+
+const PAGE_SIZE = 10
 
 /**
  * `reloadSignal` — bump this number (from a parent) to force the list to refetch, e.g.
@@ -26,6 +30,15 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
   const [cancelBusy, setCancelBusy] = useState(false)
 
   const [watches, setWatches] = useState<WatchOut[] | null>(null)
+
+  const {
+    page: reservationsPage,
+    setPage: setReservationsPage,
+    totalPages: reservationsTotalPages,
+    pageItems: pagedReservations,
+  } = usePagedItems(reservations ?? [], PAGE_SIZE)
+  const { page: watchesPage, setPage: setWatchesPage, totalPages: watchesTotalPages, pageItems: pagedWatches } =
+    usePagedItems(watches ?? [], PAGE_SIZE)
 
   function reload() {
     reservationsApi.list(true).then(setReservations).catch((e) => {
@@ -97,12 +110,13 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                     <th>Start</th>
                     <th>End</th>
                     <th>RAM</th>
+                    <th>Status</th>
                     <th className="table-actions" />
                   </tr>
                 </thead>
                 <tbody>
                   <AnimatePresence>
-                    {reservations.map((r) => {
+                    {pagedReservations.map((r) => {
                       const gpu = gpuLookup[r.gpu_id]
                       return (
                         <motion.tr key={r.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
@@ -111,6 +125,13 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                           <td className="num">{formatDateTime(new Date(r.start_time + 'Z'))}</td>
                           <td className="num">{formatDateTime(new Date(r.end_time + 'Z'))}</td>
                           <td className="num">{(r.ram_mb / 1024).toFixed(1)} GB</td>
+                          <td>
+                            {r.status === 'SUSPENDED' && (
+                              <span className="badge badge-warn" title="Its GPU/server is deactivated; this will resume automatically once it's reactivated.">
+                                Suspended
+                              </span>
+                            )}
+                          </td>
                           <td className="table-actions">
                             <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
                               Cancel
@@ -126,7 +147,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
 
             <div className="reservation-cards">
               <AnimatePresence>
-                {reservations.map((r) => {
+                {pagedReservations.map((r) => {
                   const gpu = gpuLookup[r.gpu_id]
                   return (
                     <motion.div
@@ -153,6 +174,12 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                         <span className="muted">RAM</span>
                         <span>{(r.ram_mb / 1024).toFixed(1)} GB</span>
                       </div>
+                      {r.status === 'SUSPENDED' && (
+                        <div className="reservation-card-row">
+                          <span className="muted">Status</span>
+                          <span className="badge badge-warn">Suspended</span>
+                        </div>
+                      )}
                       <button className="btn btn-sm btn-danger" onClick={() => setPendingCancel(r)}>
                         Cancel
                       </button>
@@ -161,6 +188,8 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                 })}
               </AnimatePresence>
             </div>
+
+            <Pagination page={reservationsPage} totalPages={reservationsTotalPages} onChange={setReservationsPage} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -188,7 +217,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
               </thead>
               <tbody>
                 <AnimatePresence>
-                  {watches.map((w) => {
+                  {pagedWatches.map((w) => {
                     const gpu = gpuLookup[w.gpu_id]
                     return (
                       <motion.tr key={w.id} layout variants={fadeSlideVariants} initial="initial" animate="animate" exit="exit">
@@ -207,6 +236,7 @@ export function MyReservationsCard({ reloadSignal = 0 }: { reloadSignal?: number
                 </AnimatePresence>
               </tbody>
             </table>
+            <Pagination page={watchesPage} totalPages={watchesTotalPages} onChange={setWatchesPage} />
           </motion.div>
         )}
       </AnimatePresence>

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class ServerOut(BaseModel):
     id: int
     name: str
+    is_active: bool
     model_config = {"from_attributes": True}
 
 
@@ -13,6 +14,7 @@ class GpuOut(BaseModel):
     index_on_server: int
     model_name: str
     total_ram_mb: int
+    is_active: bool
     model_config = {"from_attributes": True}
 
 
@@ -27,11 +29,13 @@ class GpuOverviewOut(BaseModel):
     used_ram_mb: int  # RAM held by reservations active right now
     free_ram_mb: int  # total_ram_mb - used_ram_mb, clamped at 0
     active_reservations: int
+    is_active: bool
 
 
 class ServerOverviewOut(BaseModel):
     id: int
     name: str
+    is_active: bool
     gpus: list[GpuOverviewOut]
 
 
@@ -45,7 +49,7 @@ class RegulationOut(BaseModel):
     booking_horizon_days: int
     min_reservation_slot_minutes: int
     max_active_reservations_per_user: int
-    min_cancellation_notice_minutes: int
+    reactivation_delay_minutes: int
     # Not a Regulation column: filled in by the /api/regulation route from app_cfg.timezone.
     # The frontend must build reservation start/end times against this timezone (not the
     # visiting browser's), since slot alignment is checked in UTC and the two only agree if

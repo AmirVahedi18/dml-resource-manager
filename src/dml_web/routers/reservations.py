@@ -33,7 +33,8 @@ def create_reservation(
 
     regulation = regulation_service.get_regulation(session)
     return reservation_service.create_reservation(
-        session, user, gpu, payload.start_time, payload.end_time, payload.ram_mb, regulation
+        session, user, gpu, payload.start_time, payload.end_time, payload.ram_mb, regulation,
+        description=payload.description,
     )
 
 
@@ -46,6 +47,4 @@ def cancel_reservation(
     reservation = session.get(Reservation, reservation_id)
     if reservation is None or reservation.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Reservation not found")
-    regulation = regulation_service.get_regulation(session)
-    reservation_service.assert_cancellable(reservation, regulation)
     reservation_service.cancel_reservation(session, reservation)

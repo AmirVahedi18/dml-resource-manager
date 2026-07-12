@@ -1,6 +1,8 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from dml_core.db.models.feedback import Feedback
+from dml_core.db.models.reservation import Reservation
 from dml_core.db.models.server_access import ServerAccess
 from dml_core.db.models.user import User
 from dml_core.db.models.watch import WatchSubscription
@@ -31,7 +33,7 @@ def set_active(session: Session, user: User, is_active: bool) -> User:
 
 def set_max_concurrent_gpus(session: Session, user: User, max_concurrent_gpus: int) -> User:
     if max_concurrent_gpus < 1:
-        raise ValueError("max_concurrent_gpus must be at least 1")
+        raise ValueError("The maximum concurrent GPUs must be at least 1.")
     user.max_concurrent_gpus = max_concurrent_gpus
     session.flush()
     return user
@@ -50,16 +52,13 @@ def rename_user(session: Session, user: User, full_name: str) -> User:
 
 
 def delete_user(session: Session, user: User) -> None:
-    """Removes the user's account (login credentials, admin role, watches, server access) but
-    keeps the `User` row and every reservation they ever made -- reservation history must never
-    be lost, and `Reservation.user_id` is a required FK that report code dereferences directly
-    (e.g. `r.user.full_name`), so the row can't be hard-deleted without breaking that.
-    `username` is nullable specifically so it can be cleared here, freeing it up for reuse while
-    the scrubbed account stays visible (inactive, credential-less) in past reservation records."""
+    """Hard-deletes the account: every reservation, watch, server-access grant, and feedback
+    submission tied to it is removed along with the `User` row itself. Nothing about a deleted
+    user is kept -- they must not appear anywhere afterward (user lists, reservation history,
+    usage reports, feedback)."""
+    session.execute(delete(Reservation).where(Reservation.user_id == user.id))
     session.execute(delete(WatchSubscription).where(WatchSubscription.user_id == user.id))
     session.execute(delete(ServerAccess).where(ServerAccess.user_id == user.id))
-    user.username = None
-    user.password_hash = None
-    user.is_active = False
-    user.is_admin = False
+    session.execute(delete(Feedback).where(Feedback.user_id == user.id))
+    session.delete(user)
     session.flush()

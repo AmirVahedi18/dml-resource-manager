@@ -38,7 +38,10 @@ def get_regulation(
 def list_servers(
     session: Session = Depends(get_session), user: User = Depends(get_current_user)
 ) -> list[Server]:
-    servers = server_service.list_servers(session)
+    # Inactive (but not deleted) servers are still shown -- the frontend renders them as
+    # disabled/unselectable rather than hiding them, so students know why a server they used to
+    # have isn't bookable instead of it just vanishing.
+    servers = server_service.list_servers(session, active_only=False)
     accessible = access.accessible_server_ids(session, user)
     if accessible is not None:
         servers = [s for s in servers if s.id in accessible]
@@ -55,7 +58,7 @@ def get_overview(
     overlap "now", their sum is exactly the current peak concurrent usage on the GPU.
     """
     now = utc_now()
-    servers = server_service.list_servers(session)
+    servers = server_service.list_servers(session, active_only=False)
     accessible = access.accessible_server_ids(session, user)
     if accessible is not None:
         servers = [s for s in servers if s.id in accessible]
@@ -63,7 +66,7 @@ def get_overview(
     overview: list[ServerOverviewOut] = []
     for server in servers:
         gpu_outs: list[GpuOverviewOut] = []
-        for gpu in server_service.list_gpus(session, server):
+        for gpu in server_service.list_gpus(session, server, active_only=False):
             active = reservation_service.get_overlapping_active_reservations(session, gpu.id, now, now)
             used = sum(r.ram_mb for r in active)
             gpu_outs.append(
@@ -75,9 +78,12 @@ def get_overview(
                     used_ram_mb=used,
                     free_ram_mb=max(gpu.total_ram_mb - used, 0),
                     active_reservations=len(active),
+                    is_active=gpu.is_active,
                 )
             )
-        overview.append(ServerOverviewOut(id=server.id, name=server.name, gpus=gpu_outs))
+        overview.append(
+            ServerOverviewOut(id=server.id, name=server.name, is_active=server.is_active, gpus=gpu_outs)
+        )
     return overview
 
 
@@ -89,7 +95,7 @@ def list_gpus(
     server = session.get(Server, server_id)
     if server is None:
         raise HTTPException(404, "Server not found")
-    return server_service.list_gpus(session, server)
+    return server_service.list_gpus(session, server, active_only=False)
 
 
 @router.get("/gpus/{gpu_id}/availability")
@@ -97,7 +103,6 @@ def get_availability(
     gpu_id: int,
     range_start: datetime = Query(...),
     range_end: datetime = Query(...),
-    bucket_hours: float | None = Query(None, gt=0),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
     app_cfg: AppConfig = Depends(get_app_cfg),
@@ -109,9 +114,14 @@ def get_availability(
 
     range_start, range_end = to_naive_utc(range_start), to_naive_utc(range_end)
     reservations = reservation_service.list_reservations_for_gpu(session, gpu.id, range_start, range_end)
-    effective_bucket_hours = bucket_hours if bucket_hours is not None else app_cfg.schedule_chart.bucket_hours
+    regulation = regulation_service.get_regulation(session)
     return chart_data.build_occupancy_chart(
-        reservations, gpu.total_ram_mb, range_start, range_end, app_cfg.timezone, effective_bucket_hours
+        reservations,
+        gpu.total_ram_mb,
+        range_start,
+        range_end,
+        app_cfg.timezone,
+        regulation.min_reservation_slot_minutes,
     )
 
 

@@ -7,11 +7,14 @@ import { NavShell } from './components/NavShell'
 import { LoginPage } from './pages/LoginPage'
 import { ReservePage } from './pages/ReservePage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
+import { FeedbackPage } from './pages/FeedbackPage'
 import { AdminUsersPage } from './pages/admin/AdminUsersPage'
 import { AdminServersPage } from './pages/admin/AdminServersPage'
 import { AdminRegulationPage } from './pages/admin/AdminRegulationPage'
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage'
+import { AdminWatchesPage } from './pages/admin/AdminWatchesPage'
 import { AdminUsageReportPage } from './pages/admin/AdminUsageReportPage'
+import { AdminFeedbackPage } from './pages/admin/AdminFeedbackPage'
 
 function App() {
   return (
@@ -27,13 +30,16 @@ function App() {
                 <Route element={<NavShell />}>
                   <Route index element={<ReservePage />} />
                   <Route path="/change-password" element={<ChangePasswordPage />} />
+                  <Route path="/feedback" element={<FeedbackPage />} />
 
                   <Route element={<ProtectedRoute adminOnly />}>
                     <Route path="/admin/users" element={<AdminUsersPage />} />
                     <Route path="/admin/servers" element={<AdminServersPage />} />
                     <Route path="/admin/regulation" element={<AdminRegulationPage />} />
                     <Route path="/admin/reservations" element={<AdminReservationsPage />} />
+                    <Route path="/admin/watches" element={<AdminWatchesPage />} />
                     <Route path="/admin/usage" element={<AdminUsageReportPage />} />
+                    <Route path="/admin/feedback" element={<AdminFeedbackPage />} />
                   </Route>
                 </Route>
               </Route>

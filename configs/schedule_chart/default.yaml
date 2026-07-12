@@ -1,2 +1,0 @@
-# Width of each time bucket in the occupancy chart, in hours (e.g. 1, 2, 4, 6, 12, 24).
-bucket_hours: 1.0

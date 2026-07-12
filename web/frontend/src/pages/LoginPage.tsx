@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { errorMessage } from '../api/errorMessage'
@@ -5,6 +6,7 @@ import { useAuth } from '../auth/AuthContext'
 import { AppFooter } from '../components/AppFooter'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { useToast } from '../components/Toast'
+import { cardVariants } from '../motion'
 
 export function LoginPage() {
   const { user, login } = useAuth()
@@ -32,7 +34,13 @@ export function LoginPage() {
       <div style={{ position: 'absolute', top: 16, right: 20 }}>
         <ThemeToggle />
       </div>
-      <form className="card login-card" onSubmit={handleSubmit}>
+      <motion.form
+        className="card login-card"
+        onSubmit={handleSubmit}
+        variants={cardVariants}
+        initial="initial"
+        animate="animate"
+      >
         <img src="/logo.png" alt="" className="login-logo" />
         <h1 className="login-title">DML Resource Manager</h1>
         <p className="muted" style={{ marginBottom: 16, textAlign: 'center' }}>
@@ -49,7 +57,7 @@ export function LoginPage() {
         <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-      </form>
+      </motion.form>
       <AppFooter />
     </div>
   )

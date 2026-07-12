@@ -20,10 +20,10 @@ def _to_utc_naive(dt_local_aware: datetime) -> datetime:
 
 
 def _bucket_boundaries(
-    range_start: datetime, range_end: datetime, tz_name: str, bucket_hours: float
+    range_start: datetime, range_end: datetime, tz_name: str, bucket_minutes: int
 ) -> list[datetime]:
     """Local-time bucket edges, anchored to local midnight so buckets read like a clock."""
-    step = timedelta(hours=bucket_hours)
+    step = timedelta(minutes=bucket_minutes)
     start_local = _to_local(range_start, tz_name)
     end_local = _to_local(range_end, tz_name)
     day_start = start_local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -92,10 +92,10 @@ def build_occupancy_chart(
     range_start: datetime,
     range_end: datetime,
     tz_name: str,
-    bucket_hours: float,
+    bucket_minutes: int,
 ) -> dict:
     capacity_mb = max(capacity_mb, 1)
-    bucket_hours = max(bucket_hours, 0.25)
+    bucket_minutes = max(bucket_minutes, 1)
 
     occupied = []
     for r in reservations:
@@ -103,7 +103,7 @@ def build_occupancy_chart(
         if window:
             occupied.append((window[0], window[1], r.user.full_name, r.ram_mb))
 
-    boundaries = _bucket_boundaries(range_start, range_end, tz_name, bucket_hours)
+    boundaries = _bucket_boundaries(range_start, range_end, tz_name, bucket_minutes)
     buckets = []
     for start_local, end_local in zip(boundaries, boundaries[1:]):
         b_start_utc, b_end_utc = _to_utc_naive(start_local), _to_utc_naive(end_local)
@@ -128,7 +128,7 @@ def build_occupancy_chart(
         "range_end": _to_local(range_end, tz_name).isoformat(),
         "capacity_mb": capacity_mb,
         "tz": tz_name,
-        "bucket_hours": bucket_hours,
+        "bucket_minutes": bucket_minutes,
         "buckets": buckets,
         "segments": segments,
     }

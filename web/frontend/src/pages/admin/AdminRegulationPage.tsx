@@ -14,7 +14,7 @@ const FIELDS: { key: keyof RegulationOut; label: string; help: string }[] = [
   { key: 'booking_horizon_days', label: 'Booking horizon (days)', help: 'How far in advance a reservation may start.' },
   { key: 'min_reservation_slot_minutes', label: 'Time-slot granularity (minutes)', help: 'Reservations must start/end aligned to this grid.' },
   { key: 'max_active_reservations_per_user', label: 'Max active reservations per user', help: 'How many upcoming reservations a student may hold at once.' },
-  { key: 'min_cancellation_notice_minutes', label: 'Min. self-cancellation notice (minutes)', help: '0 disables the cutoff. Admin cancellations always bypass this.' },
+  { key: 'reactivation_delay_minutes', label: 'Reactivation delay (minutes)', help: 'When a GPU/server is reactivated, resumed reservations restart this many minutes from now.' },
 ]
 
 export function AdminRegulationPage() {
